@@ -1,0 +1,10 @@
+.git
+.gitignore
+.github
+**/node_modules
+**/.wrangler
+**/.env
+deploy/.env
+mail-vue/dist
+cloud-mail-server/node_modules
+cloud-mail-receive-worker/node_modules

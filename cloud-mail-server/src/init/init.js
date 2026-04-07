@@ -28,8 +28,62 @@ const dbInit = {
 		await this.v2_7DB(c);
 		await this.v2_8DB(c);
 		await this.v2_9DB(c);
+		await this.v2_10DB(c);
+		await this.v2_11DB(c);
+		await this.v2_12DB(c);
+		await this.v2_13DB(c);
 		await settingService.refresh(c);
 		return c.text('success');
+	},
+
+	async v2_13DB(c) {
+		try {
+			await c.env.db.prepare(`ALTER TABLE setting ADD COLUMN domain_list TEXT NOT NULL DEFAULT '';`).run();
+		} catch (e) {
+			console.warn(`跳过字段：${e.message}`);
+		}
+	},
+
+	async v2_12DB(c) {
+		const sqlList = [
+			`ALTER TABLE setting ADD COLUMN smtp_secure_enabled INTEGER NOT NULL DEFAULT 0;`,
+			`ALTER TABLE setting ADD COLUMN smtp_secure_port INTEGER NOT NULL DEFAULT 465;`
+		];
+
+		for (const sql of sqlList) {
+			try {
+				await c.env.db.prepare(sql).run();
+			} catch (e) {
+				console.warn(`跳过字段：${e.message}`);
+			}
+		}
+	},
+
+	async v2_11DB(c) {
+		const sqlList = [
+			`ALTER TABLE setting ADD COLUMN smtp_require_auth INTEGER NOT NULL DEFAULT 0;`,
+			`ALTER TABLE setting ADD COLUMN smtp_auth_user TEXT NOT NULL DEFAULT '';`,
+			`ALTER TABLE setting ADD COLUMN smtp_auth_pass TEXT NOT NULL DEFAULT '';`,
+			`ALTER TABLE setting ADD COLUMN smtp_enable_starttls INTEGER NOT NULL DEFAULT 0;`,
+			`ALTER TABLE setting ADD COLUMN smtp_tls_key_path TEXT NOT NULL DEFAULT '';`,
+			`ALTER TABLE setting ADD COLUMN smtp_tls_cert_path TEXT NOT NULL DEFAULT '';`
+		];
+
+		for (const sql of sqlList) {
+			try {
+				await c.env.db.prepare(sql).run();
+			} catch (e) {
+				console.warn(`跳过字段：${e.message}`);
+			}
+		}
+	},
+
+	async v2_10DB(c) {
+		try {
+			await c.env.db.prepare(`ALTER TABLE setting ADD COLUMN permanent_token TEXT NOT NULL DEFAULT '';`).run();
+		} catch (e) {
+			console.warn(`跳过字段：${e.message}`);
+		}
 	},
 
 	async v2_9DB(c) {

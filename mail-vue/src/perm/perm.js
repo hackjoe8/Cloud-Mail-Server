@@ -80,6 +80,15 @@ const routers = {
         }
     }],
     'setting:query': [{
+        path: '/email-list',
+        name: 'domain-list',
+        component: () => import('@/views/domain-list/index.vue'),
+        meta: {
+            title: 'emailSuffixList',
+            name: 'domain-list',
+            menu: true
+        }
+    }, {
         path: '/system-setting',
         name: 'sys-setting',
         component: () => import('@/views/sys-setting/index.vue'),

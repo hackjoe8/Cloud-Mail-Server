@@ -12,6 +12,7 @@ import { bootstrapDatabase } from './runtime/bootstrap/init-db';
 import { runDailyTasks } from './runtime/tasks/daily-tasks';
 import { startSmtpServer } from './runtime/smtp/start-smtp-server';
 import r2Service from './service/r2-service';
+import settingService from './service/setting-service';
 
 console.log('[boot] preparing runtime...');
 const runtime = await createRuntime();
@@ -205,7 +206,24 @@ const httpServer = serve({
 
 console.log(`[server] cloud-mail-server listening on :${runtime.config.port}`);
 
-const smtpServerController = await startSmtpServer(runtime);
+let initialSmtpSetting = null;
+try {
+	initialSmtpSetting = await settingService.query(contextLike({ req: { path: '' } }));
+} catch (error) {
+	console.warn(`[smtp] load saved settings before startup failed: ${error.message}`);
+}
+
+const smtpServerController = await startSmtpServer(runtime, {
+	initialSetting: initialSmtpSetting || {}
+});
+runtime.env.smtpController = smtpServerController;
+if (smtpServerController?.applySettings) {
+	try {
+		await smtpServerController.applySettings(initialSmtpSetting || await settingService.query(contextLike({ req: { path: '' } })));
+	} catch (error) {
+		console.warn(`[smtp] apply saved settings failed: ${error.message}`);
+	}
+}
 console.log('[boot] smtp startup finished.');
 
 const close = async () => {

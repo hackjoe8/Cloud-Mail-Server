@@ -90,7 +90,7 @@
 <script setup>
 import {starAdd, starCancel} from "@/request/star.js";
 import emailScroll from "@/components/email-scroll/index.vue"
-import {computed, defineOptions, reactive, ref, watch, onMounted} from "vue";
+import {computed, defineOptions, reactive, ref, watch, onActivated, onDeactivated, onMounted, onUnmounted} from "vue";
 import {useEmailStore} from "@/store/email.js";
 import {
   allEmailList,
@@ -102,9 +102,10 @@ import {Icon} from "@iconify/vue";
 import router from "@/router/index.js";
 import {useI18n} from 'vue-i18n';
 import {toUtc} from "@/utils/day.js";
-import {sleep} from "@/utils/time-utils.js";
 import {useSettingStore} from "@/store/setting.js";
 import { useRoute } from 'vue-router'
+import { createAsyncPolling } from '@/utils/async-polling.js';
+import { buildAllEmailLatestParams, shouldPollAllEmailLatest } from "@/views/all-email/all-email-latest-utils.js";
 
 defineOptions({
   name: 'all-email'
@@ -120,10 +121,6 @@ const searchValue = ref('')
 const mySelect = ref()
 const showBathDelete = ref(false)
 const clearLoading = ref(false)
-
-onMounted(() => {
-  latest();
-})
 
 const openSelect = () => {
   mySelect.value.toggleMenu()
@@ -287,72 +284,70 @@ function jumpContent(email) {
   router.push({name: 'content'})
 }
 
-
-function getEmailList(emailId, size) {
-  return allEmailList({emailId, size, ...params})
+function getEmailList(emailId, size, options = {}) {
+  return allEmailList({emailId, size, ...params}, options)
 }
 
-async function latest() {
+function getPollingDelay() {
+  const autoRefresh = Number(settingStore.settings.autoRefresh);
+  return autoRefresh > 1 ? autoRefresh * 1000 : 3000;
+}
 
-  while (true) {
+const latestPolling = createAsyncPolling({
+  getDelay: getPollingDelay,
+  shouldRun() {
+    return route.name === 'all-email';
+  },
+  async onTick() {
+    const autoRefresh = Number(settingStore.settings.autoRefresh);
+    const latestId = sysEmailScroll.value.latestEmail?.emailId;
 
-    let autoRefresh = settingStore.settings.autoRefresh;
-
-    await sleep(autoRefresh > 1 ? autoRefresh * 1000 : 3000);
-
-    const latestId = sysEmailScroll.value.latestEmail?.emailId
-
-    if (autoRefresh < 2) {
-      continue
+    if (!shouldPollAllEmailLatest({ autoRefresh, latestId, params })) {
+      return;
     }
 
-    if (!latestId && latestId !== 0) {
-      continue
+    const curTimeSort = params.timeSort;
+    const latestParams = buildAllEmailLatestParams(latestId, params);
+    const latestParamsSnapshot = JSON.stringify(latestParams);
+    const list = await allEmailLatest(latestParams)
+
+    if (list.length === 0) {
+      return;
     }
 
-    if (route.name !== 'all-email') {
-      continue
+    const latestParamsChanged = latestParamsSnapshot !== JSON.stringify(buildAllEmailLatestParams(latestId, params));
+
+    if (route.name !== 'all-email' || params.type !== 'receive' || params.timeSort !== curTimeSort || latestParamsChanged) {
+      return;
     }
 
-
-    if (params.type !== 'receive') {
-      continue
+    for (const email of list) {
+      sysEmailScroll.value.addItem(email)
     }
-
-    try {
-
-      const curTimeSort = params.timeSort
-      let list = await allEmailLatest(latestId)
-
-      if (list.length === 0) {
-        continue
-      }
-
-      if (params.type !== 'receive') {
-        continue
-      }
-
-      // 确保回来之后条件没变
-      if (params.timeSort !== curTimeSort) {
-        continue
-      }
-
-      for (let email of list) {
-
-        sysEmailScroll.value.addItem(email)
-        await sleep(50)
-
-      }
-
-    } catch (e) {
-      if (e.code === 401 || e.code === 403) {
-        settingStore.settings.autoRefresh = 0;
-      }
-      console.error(e)
+  },
+  onError(e) {
+    if (e.code === 401 || e.code === 403) {
+      settingStore.settings.autoRefresh = 0;
     }
-
+    console.error(e)
   }
-}
+});
+
+onMounted(() => {
+  latestPolling.start();
+})
+
+onActivated(() => {
+  latestPolling.start();
+})
+
+onDeactivated(() => {
+  latestPolling.stop();
+})
+
+onUnmounted(() => {
+  latestPolling.stop();
+})
 
 </script>
 <style>

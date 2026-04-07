@@ -10,6 +10,7 @@ import user from '../entity/user';
 import verifyUtils from '../utils/verify-utils';
 import { t } from '../i18n/i18n.js';
 import emailUtils from '../utils/email-utils';
+import { domainMatchesList } from '../utils/domain-uitls.js';
 
 const roleService = {
 
@@ -162,12 +163,8 @@ const roleService = {
 			return true
 		}
 
-		const availIndex = availDomain.findIndex(item => {
-			const domain = emailUtils.getDomain(email.toLowerCase());
-			const availDomainItem = item.toLowerCase();
-			console.log(domain,availDomainItem)
-			return domain === availDomainItem
-		})
+		const domain = emailUtils.getDomain(email.toLowerCase());
+		const availIndex = availDomain.findIndex(item => domainMatchesList([item], domain));
 
 		return availIndex > -1
 	},

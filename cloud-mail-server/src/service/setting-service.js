@@ -8,8 +8,76 @@ import constant from '../const/constant';
 import BizError from '../error/biz-error';
 import {t} from '../i18n/i18n'
 import verifyRecordService from './verify-record-service';
+import { formatDomainList, isValidDomainName, normalizeDomainList, resolveActiveDomainList } from '../utils/domain-uitls.js';
+
+export function normalizeSmtpSettingParams(params, currentSetting = {}) {
+	const nextParams = { ...params };
+
+	if (typeof nextParams.smtpRequireAuth === 'boolean') {
+		nextParams.smtpRequireAuth = nextParams.smtpRequireAuth ? 1 : 0;
+	}
+
+	if (typeof nextParams.smtpEnableStarttls === 'boolean') {
+		nextParams.smtpEnableStarttls = nextParams.smtpEnableStarttls ? 1 : 0;
+	}
+
+	if (typeof nextParams.smtpSecureEnabled === 'boolean') {
+		nextParams.smtpSecureEnabled = nextParams.smtpSecureEnabled ? 1 : 0;
+	}
+
+	if (typeof nextParams.smtpAuthUser === 'string') {
+		nextParams.smtpAuthUser = nextParams.smtpAuthUser.trim();
+	}
+
+	if (typeof nextParams.smtpTlsKeyPath === 'string') {
+		nextParams.smtpTlsKeyPath = nextParams.smtpTlsKeyPath.trim();
+	}
+
+	if (typeof nextParams.smtpTlsCertPath === 'string') {
+		nextParams.smtpTlsCertPath = nextParams.smtpTlsCertPath.trim();
+	}
+
+	if (nextParams.smtpSecurePort !== undefined) {
+		const parsed = Number(nextParams.smtpSecurePort);
+		if (Number.isFinite(parsed) && parsed > 0) {
+			nextParams.smtpSecurePort = Math.trunc(parsed);
+		} else {
+			delete nextParams.smtpSecurePort;
+		}
+	}
+
+	if (typeof nextParams.smtpAuthPass === 'string') {
+		if (!nextParams.smtpAuthPass) {
+			delete nextParams.smtpAuthPass;
+		} else if (nextParams.smtpAuthPass === currentSetting.smtpAuthPass) {
+			delete nextParams.smtpAuthPass;
+		}
+	}
+
+	return nextParams;
+}
 
 const settingService = {
+	maskSecret(value, visible = 12) {
+		if (!value) return null;
+		const revealCount = Math.max(0, Math.min(visible, value.length - 6));
+		if (revealCount <= 0) return '******';
+		return `${value.slice(0, revealCount)}******`;
+	},
+
+	applyDomainSettings(settingRow, envDomain = []) {
+		const domainList = resolveActiveDomainList(settingRow?.domainListRaw, envDomain);
+
+		if (domainList.length === 0) {
+			throw new BizError(t('noDomainVariable'));
+		}
+
+		if (settingRow) {
+			settingRow.domainList = formatDomainList(domainList);
+		}
+
+		return domainList;
+	},
 
 	async refresh(c) {
 		const settingRow = await orm(c).select().from(settingEntity).get();
@@ -17,6 +85,10 @@ const settingService = {
 			return;
 		}
 		settingRow.resendTokens = JSON.parse(settingRow.resendTokens);
+		const activeDomainList = this.applyDomainSettings(settingRow, c.env?.domain);
+		if (c.env) {
+			c.env.domain = activeDomainList;
+		}
 		c.set('setting', settingRow);
 		await c.env.kv.put(KvConst.SETTING, JSON.stringify(settingRow));
 	},
@@ -39,22 +111,8 @@ const settingService = {
 			await c.env.kv.put(KvConst.SETTING, JSON.stringify(setting));
 		}
 
-		let domainList = c.env.domain;
-
-		if (typeof domainList === 'string') {
-			try {
-				domainList = JSON.parse(domainList)
-			} catch (error) {
-				throw new BizError(t('notJsonDomain'));
-			}
-		}
-
-		if (!c.env.domain) {
-			throw new BizError(t('noDomainVariable'));
-		}
-
-		domainList = domainList.map(item => '@' + item);
-		setting.domainList = domainList;
+		const activeDomainList = this.applyDomainSettings(setting, c.env?.domain);
+		c.env.domain = activeDomainList;
 
 
 		let linuxdoSwitch = c.env.linuxdo_switch;
@@ -90,6 +148,8 @@ const settingService = {
 		}
 
 		settingRow.secretKey = settingRow.secretKey ? `${settingRow.secretKey.slice(0, 6)}******` : null;
+		settingRow.permanentToken = this.maskSecret(settingRow.permanentToken);
+		settingRow.smtpAuthPass = this.maskSecret(settingRow.smtpAuthPass, 4);
 
 		Object.keys(settingRow.resendTokens).forEach(key => {
 			settingRow.resendTokens[key] = `${settingRow.resendTokens[key].slice(0, 12)}******`;
@@ -126,13 +186,35 @@ const settingService = {
 			if (!resendTokens[domain]) delete resendTokens[domain];
 		});
 
+		if (Object.hasOwn(params, 'domainList')) {
+			const normalizedDomainList = normalizeDomainList(params.domainList, { allowWildcard: true });
+			if (normalizedDomainList.length === 0) {
+				throw new BizError(t('noDomainVariable'));
+			}
+			const invalidDomain = normalizedDomainList.find((item) => !isValidDomainName(item, { allowWildcard: true }));
+			if (invalidDomain) {
+				throw new BizError(t('notExistDomain'));
+			}
+			params.domainListRaw = JSON.stringify(normalizedDomainList);
+			delete params.domainList;
+		}
+
 		if (Array.isArray(params.emailPrefixFilter)) {
 			params.emailPrefixFilter = params.emailPrefixFilter + '';
 		}
 
+		if (typeof params.permanentToken === 'string') {
+			params.permanentToken = params.permanentToken.trim();
+		}
+
+		params = normalizeSmtpSettingParams(params, settingData);
+
 		params.resendTokens = JSON.stringify(resendTokens);
 		await orm(c).update(settingEntity).set({ ...params }).returning().get();
 		await this.refresh(c);
+		if (c.env.smtpController?.applySettings) {
+			await c.env.smtpController.applySettings(await this.query(c));
+		}
 	},
 
 	async deleteBackground(c) {

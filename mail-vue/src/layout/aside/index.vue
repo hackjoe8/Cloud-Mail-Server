@@ -49,6 +49,11 @@
           <Icon icon="fluent:mail-list-28-regular" width="22" height="22" />
           <span class="menu-name" style="margin-left: 20px">{{$t('allMail')}}</span>
         </el-menu-item>
+        <el-menu-item @click="router.push({name: 'domain-list'})" index="domain-list" v-perm="'setting:query'"
+                      :class="route.meta.name === 'domain-list' ? 'choose-item' : ''">
+          <Icon icon="fluent:mail-list-28-regular" width="22" height="22" />
+          <span class="menu-name" style="margin-left: 20px">{{$t('emailSuffixList')}}</span>
+        </el-menu-item>
         <el-menu-item @click="router.push({name: 'role'})" index="setting" v-perm="'role:query'"
                       :class="route.meta.name === 'role' ? 'choose-item' : ''">
           <Icon icon="fluent:lock-closed-16-regular" width="22" height="22" />

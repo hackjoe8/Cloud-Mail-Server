@@ -232,11 +232,22 @@ function toBool(value, fallback = false) {
 	return String(value).toLowerCase() === 'true';
 }
 
+function toNumber(value, fallback) {
+	if (value === undefined || value === null || value === '') return fallback;
+	const parsed = Number(value);
+	return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 export function createPgPoolFromEnv(env = process.env) {
 	const ssl = toBool(env.PG_SSL, false);
 	return new Pool({
 		connectionString: env.DATABASE_URL,
-		ssl: ssl ? { rejectUnauthorized: false } : undefined
+		ssl: ssl ? { rejectUnauthorized: false } : undefined,
+		max: Math.max(1, toNumber(env.PG_POOL_MAX, 12)),
+		min: Math.max(0, toNumber(env.PG_POOL_MIN, 0)),
+		idleTimeoutMillis: Math.max(1000, toNumber(env.PG_IDLE_TIMEOUT_MS, 10_000)),
+		connectionTimeoutMillis: Math.max(1000, toNumber(env.PG_CONNECT_TIMEOUT_MS, 5_000)),
+		maxUses: Math.max(1, toNumber(env.PG_MAX_USES, 7_500))
 	});
 }
 

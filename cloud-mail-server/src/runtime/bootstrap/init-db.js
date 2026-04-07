@@ -168,7 +168,17 @@ const CREATE_TABLE_SQL = [
 		rule_email TEXT NOT NULL DEFAULT '',
 		rule_type INTEGER NOT NULL DEFAULT 0,
 		login_opacity DOUBLE PRECISION DEFAULT 0.88,
+		domain_list TEXT NOT NULL DEFAULT '',
 		resend_tokens TEXT NOT NULL DEFAULT '{}',
+		permanent_token TEXT NOT NULL DEFAULT '',
+		smtp_require_auth INTEGER NOT NULL DEFAULT 0,
+		smtp_auth_user TEXT NOT NULL DEFAULT '',
+		smtp_auth_pass TEXT NOT NULL DEFAULT '',
+		smtp_enable_starttls INTEGER NOT NULL DEFAULT 0,
+		smtp_tls_key_path TEXT NOT NULL DEFAULT '',
+		smtp_tls_cert_path TEXT NOT NULL DEFAULT '',
+		smtp_secure_enabled INTEGER NOT NULL DEFAULT 0,
+		smtp_secure_port INTEGER NOT NULL DEFAULT 465,
 		notice_title TEXT NOT NULL DEFAULT 'Cloud Mail',
 		notice_content TEXT NOT NULL DEFAULT '本项目仅供学习交流，禁止用于违法业务<br>请遵守当地法规，作者不承担任何法律责任',
 		notice_type TEXT NOT NULL DEFAULT 'none',
@@ -260,7 +270,17 @@ const CREATE_TABLE_SQL = [
 	`CREATE UNIQUE INDEX IF NOT EXISTS idx_account_email_nocase ON account (LOWER(email))`,
 	`CREATE UNIQUE INDEX IF NOT EXISTS idx_user_email_nocase ON "user" (LOWER(email))`,
 	`CREATE UNIQUE INDEX IF NOT EXISTS idx_setting_code ON reg_key (LOWER(code))`,
-	`CREATE INDEX IF NOT EXISTS idx_email_user_id_account_id ON email (user_id, account_id)`
+	`CREATE INDEX IF NOT EXISTS idx_email_user_id_account_id ON email (user_id, account_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_email_user_account_type_is_del_email_id ON email (user_id, account_id, type, is_del, email_id DESC)`,
+	`CREATE INDEX IF NOT EXISTS idx_email_user_type_is_del_email_id ON email (user_id, type, is_del, email_id DESC)`,
+	`CREATE INDEX IF NOT EXISTS idx_email_type_status_email_id ON email (type, status, email_id DESC)`,
+	`CREATE INDEX IF NOT EXISTS idx_email_type_is_del_email_id ON email (type, is_del, email_id DESC)`,
+	`CREATE INDEX IF NOT EXISTS idx_email_to_email_lower ON email (LOWER(to_email))`,
+	`CREATE INDEX IF NOT EXISTS idx_email_send_email_lower ON email (LOWER(send_email))`,
+	`CREATE INDEX IF NOT EXISTS idx_attachments_email_id_type ON attachments (email_id, type)`,
+	`CREATE INDEX IF NOT EXISTS idx_star_user_email ON star (user_id, email_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_account_user_sort_account ON account (user_id, is_del, sort DESC, account_id ASC)`,
+	`CREATE INDEX IF NOT EXISTS idx_email_resend_email_id ON email (resend_email_id)`
 ];
 
 async function ensureSeedData(env) {
@@ -273,6 +293,25 @@ async function ensureSeedData(env) {
 	await env.db.prepare(PERM_SEED_SQL).run();
 	await env.db.prepare(ROLE_SEED_SQL).run();
 	await env.db.prepare(ROLE_PERM_SEED_SQL).run();
+}
+
+async function ensureExistingColumns(env) {
+	const patchSqlList = [
+		`ALTER TABLE setting ADD COLUMN IF NOT EXISTS permanent_token TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE setting ADD COLUMN IF NOT EXISTS smtp_require_auth INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE setting ADD COLUMN IF NOT EXISTS smtp_auth_user TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE setting ADD COLUMN IF NOT EXISTS smtp_auth_pass TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE setting ADD COLUMN IF NOT EXISTS smtp_enable_starttls INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE setting ADD COLUMN IF NOT EXISTS smtp_tls_key_path TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE setting ADD COLUMN IF NOT EXISTS smtp_tls_cert_path TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE setting ADD COLUMN IF NOT EXISTS smtp_secure_enabled INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE setting ADD COLUMN IF NOT EXISTS smtp_secure_port INTEGER NOT NULL DEFAULT 465`,
+		`ALTER TABLE setting ADD COLUMN IF NOT EXISTS domain_list TEXT NOT NULL DEFAULT ''`
+	];
+
+	for (const sql of patchSqlList) {
+		await env.db.prepare(sql).run();
+	}
 }
 
 function toContext(env) {
@@ -290,6 +329,7 @@ export async function bootstrapDatabase(target) {
 		await env.db.prepare(sql).run();
 	}
 
+	await ensureExistingColumns(env);
 	await ensureSeedData(env);
 	await settingService.refresh(toContext(env));
 }

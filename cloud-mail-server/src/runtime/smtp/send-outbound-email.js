@@ -31,6 +31,175 @@ function formatAddress(name, email) {
 	return `${display} <${addr}>`;
 }
 
+function encodeMailboxHeaderValue(value) {
+	const safe = sanitizeHeader(value);
+	if (!safe) return '';
+	if (/=\?.+\?=/i.test(safe)) return safe;
+	if (/^[\x20-\x7E]*$/.test(safe)) return safe;
+
+	const simpleMailboxMatch = safe.match(/^(.*?)(\s*<[^>]+>)$/);
+	if (simpleMailboxMatch) {
+		const displayName = simpleMailboxMatch[1].trim().replace(/^"(.*)"$/, '$1').trim();
+		const mailbox = simpleMailboxMatch[2].trim();
+		if (!displayName) return mailbox;
+		return `${encodeHeader(displayName)} ${mailbox}`;
+	}
+
+	return encodeHeader(safe);
+}
+
+function looksLikeUtf8Mojibake(value) {
+	const safe = String(value || '');
+	if (!safe) return false;
+	if (/[\u4e00-\u9fff]/.test(safe)) return false;
+	return /[ÃÂÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ]/.test(safe);
+}
+
+function readabilityScore(value) {
+	const safe = String(value || '');
+	let score = 0;
+	for (const ch of safe) {
+		const code = ch.codePointAt(0);
+		if (
+			(code >= 0x4e00 && code <= 0x9fff) ||
+			(code >= 0x3400 && code <= 0x4dbf)
+		) {
+			score += 4;
+		} else if (
+			(code >= 0x30 && code <= 0x39) ||
+			(code >= 0x41 && code <= 0x5a) ||
+			(code >= 0x61 && code <= 0x7a)
+		) {
+			score += 1;
+		} else if (' \r\n\t<>=/:"\';,.!?@#%&()-_+[]{}'.includes(ch)) {
+			score += 0.3;
+		} else if (code >= 0x80 && code <= 0xff) {
+			score -= 1.5;
+		}
+	}
+	return score;
+}
+
+function repairUtf8Mojibake(value) {
+	const safe = String(value || '');
+	if (!looksLikeUtf8Mojibake(safe)) return safe;
+
+	try {
+		const repaired = Buffer.from(safe, 'latin1').toString('utf8');
+		if (!repaired || repaired.includes('�')) return safe;
+		return readabilityScore(repaired) > readabilityScore(safe) ? repaired : safe;
+	} catch {
+		return safe;
+	}
+}
+
+function normalizeSubmittedHeaderValue(name, value) {
+	const lower = String(name || '').toLowerCase();
+	switch (lower) {
+		case 'subject':
+			return encodeHeader(repairUtf8Mojibake(value));
+		case 'from':
+		case 'sender':
+		case 'reply-to':
+			return encodeMailboxHeaderValue(repairUtf8Mojibake(value));
+		default:
+			return value;
+	}
+}
+
+export function normalizeSubmittedRawMime(rawMessage) {
+	const input = Buffer.isBuffer(rawMessage) ? rawMessage : Buffer.from(rawMessage || '');
+	if (input.length === 0) return input;
+
+	let separator = '\r\n\r\n';
+	let headerEnd = input.indexOf(Buffer.from(separator));
+	if (headerEnd < 0) {
+		separator = '\n\n';
+		headerEnd = input.indexOf(Buffer.from(separator));
+	}
+	if (headerEnd < 0) {
+		return input;
+	}
+
+	const lineBreak = separator === '\r\n\r\n' ? '\r\n' : '\n';
+	const headerBytes = input.subarray(0, headerEnd);
+	const bodyBytes = input.subarray(headerEnd + separator.length);
+	const headerText = headerBytes.toString('utf8');
+	const rawLines = headerText.split(/\r?\n/);
+	const normalizedHeaders = [];
+	let contentType = '';
+	let transferEncoding = '';
+
+	for (const rawLine of rawLines) {
+		if (/^[ \t]/.test(rawLine) && normalizedHeaders.length > 0) {
+			normalizedHeaders[normalizedHeaders.length - 1].value += ` ${rawLine.trim()}`;
+			continue;
+		}
+
+		const sepIndex = rawLine.indexOf(':');
+		if (sepIndex <= 0) {
+			normalizedHeaders.push({ raw: rawLine, passthrough: true });
+			continue;
+		}
+
+		const name = rawLine.slice(0, sepIndex);
+		const value = rawLine.slice(sepIndex + 1).trim();
+		normalizedHeaders.push({
+			name,
+			value: normalizeSubmittedHeaderValue(name, value),
+			passthrough: false
+		});
+
+		const lowerName = name.toLowerCase();
+		if (lowerName === 'content-type') {
+			contentType = value.toLowerCase();
+		} else if (lowerName === 'content-transfer-encoding') {
+			transferEncoding = value.toLowerCase();
+		}
+	}
+
+	const findHeaderIndex = (targetName) => normalizedHeaders.findIndex((item) => !item.passthrough && item.name.toLowerCase() === targetName);
+	const setHeader = (name, value) => {
+		const idx = findHeaderIndex(name.toLowerCase());
+		if (idx >= 0) {
+			normalizedHeaders[idx] = { name: normalizedHeaders[idx].name, value, passthrough: false };
+		} else {
+			normalizedHeaders.push({ name, value, passthrough: false });
+		}
+	};
+	const removeHeader = (targetName) => {
+		for (let i = normalizedHeaders.length - 1; i >= 0; i -= 1) {
+			if (!normalizedHeaders[i].passthrough && normalizedHeaders[i].name.toLowerCase() === targetName) {
+				normalizedHeaders.splice(i, 1);
+			}
+		}
+	};
+
+	let normalizedBodyBytes = bodyBytes;
+	if (
+		(contentType.includes('text/plain') || contentType.includes('text/html')) &&
+		!contentType.includes('multipart/') &&
+		(!transferEncoding || transferEncoding === '7bit' || transferEncoding === '8bit' || transferEncoding === 'binary')
+	) {
+		const bodyText = bodyBytes.toString('utf8');
+		const repairedBodyText = repairUtf8Mojibake(bodyText);
+		const normalizedBodyText = repairedBodyText !== bodyText ? repairedBodyText : bodyText;
+		normalizedBodyBytes = Buffer.from(chunkBase64(Buffer.from(normalizedBodyText, 'utf8')), 'ascii');
+		removeHeader('content-transfer-encoding');
+		setHeader('Content-Transfer-Encoding', 'base64');
+	}
+
+	const rebuiltHeader = normalizedHeaders.map((item) => {
+		if (item.passthrough) return item.raw;
+		return `${item.name}: ${item.value}`;
+	}).join(lineBreak);
+
+	return Buffer.concat([
+		Buffer.from(rebuiltHeader + separator, 'utf8'),
+		normalizedBodyBytes
+	]);
+}
+
 function chunkBase64(buffer, size = 76) {
 	const data = Buffer.from(buffer).toString('base64');
 	const lines = [];
@@ -336,7 +505,12 @@ async function upgradeToStartTls(session, servername, timeoutMs = DEFAULT_TIMEOU
 }
 
 function normalizeSmtpData(rawMessage) {
-	const normalized = String(rawMessage || '').replace(/\r?\n/g, '\r\n');
+	const source = Buffer.isBuffer(rawMessage)
+		? rawMessage.toString('latin1')
+		: rawMessage instanceof Uint8Array
+			? Buffer.from(rawMessage).toString('latin1')
+			: String(rawMessage || '');
+	const normalized = source.replace(/\r?\n/g, '\r\n');
 	return normalized
 		.split('\r\n')
 		.map((line) => (line.startsWith('.') ? `.${line}` : line))
@@ -489,6 +663,71 @@ export async function sendOutboundEmailDirect({
 					envelopeFrom: fromEmail,
 					recipients: groupRecipients,
 					rawMessage,
+					ehloName,
+					timeoutMs
+				});
+				accepted.push(...result.accepted);
+				rejected.push(...result.rejected);
+				delivered = true;
+				break;
+			} catch (error) {
+				lastError = error;
+			}
+		}
+
+		if (!delivered) {
+			rejected.push({
+				recipient: groupRecipients.join(','),
+				message: lastError?.message || `Cannot deliver to domain ${domain}`
+			});
+		}
+	}
+
+	if (rejected.length > 0) {
+		const details = rejected.map((item) => `${item.recipient}: ${item.message}`).join('; ');
+		throw new Error(`SMTP send failed: ${details}`);
+	}
+
+	return { accepted };
+}
+
+export async function relayOutboundRawMime({
+	envelopeFrom,
+	recipients,
+	rawMessage,
+	timeoutMs = DEFAULT_TIMEOUT_MS
+}) {
+	const recipientList = Array.isArray(recipients) ? Array.from(new Set(recipients.filter(Boolean))) : [];
+	if (!envelopeFrom) {
+		throw new Error('No envelope from for outbound SMTP');
+	}
+	if (recipientList.length === 0) {
+		throw new Error('No recipients for outbound SMTP');
+	}
+
+	const ehloName = sanitizeHeader(envelopeFrom.split('@')[1] || os.hostname() || 'localhost');
+	const groups = groupRecipientsByDomain(recipientList);
+	if (groups.size === 0) {
+		throw new Error('No valid recipients for outbound SMTP');
+	}
+
+	const normalizedRawMessage = normalizeSubmittedRawMime(rawMessage);
+
+	const accepted = [];
+	const rejected = [];
+
+	for (const [domain, groupRecipients] of groups.entries()) {
+		const mxHosts = await resolveMxHosts(domain);
+		let delivered = false;
+		let lastError = null;
+
+		for (const mxHost of mxHosts) {
+			try {
+				const result = await smtpSendByHost({
+					mxHost,
+					envelopeFrom,
+					recipients: groupRecipients,
+					rawMessage: normalizedRawMessage,
 					ehloName,
 					timeoutMs
 				});

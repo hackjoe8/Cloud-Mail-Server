@@ -30,6 +30,7 @@ cp .env.example .env
 - `JWT_SECRET`
 - `POSTGRES_PASSWORD`
 - `DATABASE_URL`（密码要和 `POSTGRES_PASSWORD` 一致）
+- `PG_POOL_MAX / PG_POOL_MIN / PG_IDLE_TIMEOUT_MS / PG_CONNECT_TIMEOUT_MS / PG_MAX_USES`（建议按机器配置限制连接池）
 - `MINIO_ROOT_PASSWORD`
 
 关键点：
@@ -40,7 +41,7 @@ cp .env.example .env
 ## 3. 启动
 
 ```bash
-docker compose up -d --build
+./deploy.sh
 ```
 
 查看状态：
@@ -50,11 +51,22 @@ docker compose ps
 docker compose logs -f cloud-mail-server
 ```
 
+说明：
+
+- `deploy.sh` 只启动常驻服务：`postgres / redis / minio / cloud-mail-server`
+- 初始化步骤使用 `docker compose run --rm` 串行执行：
+  - `minio-init`
+  - `cloud-mail-init`
+  - `cloud-mail-configure-storage`
+  - `cloud-mail-refresh-cache`
+- 因为带 `--rm`，部署完成后**不会残留这些已完成的初始化容器**
+
 ## 4. 端口说明
 
 会暴露到宿主机（仅这两个）：
 
 - `${SMTP_BIND_PORT}`（默认 `25`，用于收信）
+- `${SMTP_SECURE_BIND_PORT}`（默认 `465`，用于 SMTPS 提交，可选）
 - `${API_BIND_PORT}`（默认 `8787`，前端页面 + API）
 
 不会暴露到宿主机：
@@ -67,15 +79,25 @@ docker compose logs -f cloud-mail-server
 
 示例：
 
-1. `A` 记录  
+1. `A` 记录
 - `mail.example.com -> 你的服务器公网 IP`（DNS only，不要走代理）
 
-2. `MX` 记录  
+2. `MX` 记录
 - `a.com -> mail.example.com`
 - `b.com -> mail.example.com`
 
-3. 出站 25 端口  
+3. 出站 25 端口
 - 服务器必须允许 **出站 TCP 25**（发件走 SMTP 直连目标 MX）
+
+4. 如果把本程序当作其他系统的 SMTP 提交服务器
+- 监听端口默认仍是 `25`
+- 可额外开启 `465` SMTPS 提交（`SMTP_SECURE_ENABLED=true`）
+- 已支持 **认证后的外发 relay**（提交到站外收件人时转发到目标 MX）
+- 若调用方支持 `STARTTLS`，建议开启 `SMTP_ENABLE_STARTTLS=true` 并配置证书
+- 若调用方要求隐式 TLS，可配置 `SMTP_SECURE_ENABLED=true` 与 `SMTP_SECURE_PORT=465`
+- 证书文件可放在 `deploy/certs/`，容器内挂载到 `/app/certs`
+- 若调用方只能明文在 25 端口做 `AUTH`，可为可信内网客户端设置 `SMTP_ALLOW_INSECURE_AUTH=true`
+- 未认证客户端仍只能投递到本站域名，避免开放中继
 
 ## 6. Nginx 反代示例
 
@@ -125,14 +147,14 @@ Test-NetConnection -ComputerName mail.example.com -Port 25
 
 ## 8. 常见问题
 
-1. 收不到信  
+1. 收不到信
 - MX 是否生效
 - `mail` 子域名是否指向服务器公网 IP
 - 25 端口是否放行
 - DNS 不能走代理（灰云）
 
-2. 注册报错/登录异常  
+2. 注册报错/登录异常
 - 先看 `docker compose logs -f cloud-mail-server`
 
-3. 想重置数据库  
+3. 想重置数据库
 - 停服务后删除 `postgres-data` 卷再重启（会清空数据）

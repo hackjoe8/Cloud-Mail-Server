@@ -1,7 +1,10 @@
 import http from '@/axios/index.js';
 
-export function emailList(accountId, allReceive, emailId, timeSort, size, type) {
-    return http.get('/email/list', {params: {accountId, allReceive, emailId, timeSort, size, type}})
+export function emailList(accountId, allReceive, emailId, timeSort, size, type, options = {}) {
+    const { includeTotal = true, includeLatest = true } = options;
+    return http.get('/email/list', {
+        params: {accountId, allReceive, emailId, timeSort, size, type, includeTotal, includeLatest}
+    })
 }
 
 export function emailDelete(emailIds) {

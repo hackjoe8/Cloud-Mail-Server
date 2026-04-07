@@ -315,6 +315,14 @@ const dropdownShow = ref(false);
 const rightClickEmail = ref({});
 const checkedEmailCount = ref(0);
 let timer = null
+const handleResize = () => {
+  isMobile.value = innerWidth < 1367
+}
+const handleWheelClose = () => {
+  if (dropdownShow.value) {
+    dropdownRef.value?.handleClose();
+  }
+}
 const position = ref(
     DOMRect.fromRect({
       x: 0,
@@ -357,17 +365,18 @@ onMounted(() => {
       email.formatCreateTime = fromNow(email.createTime);
     })
   }, 1000 * 60);
+
+  window.addEventListener('resize', handleResize)
+  window.addEventListener('wheel', handleWheelClose)
 })
 
 onUnmounted(() => {
   clearInterval(timer)
+  window.removeEventListener('resize', handleResize)
+  window.removeEventListener('wheel', handleWheelClose)
 })
 
 getEmailList()
-
-window.onresize = () => {
-  isMobile.value = innerWidth < 1367
-}
 
 function onScroll(e) {
   scrollTop = e.target.scrollTop;
@@ -467,12 +476,6 @@ watch(() => emailStore.addStarEmailId, () => {
       email.isStar = 1
     }
   })
-})
-
-window.addEventListener('wheel', (event) => {
-  if (dropdownShow.value) {
-    dropdownRef.value.handleClose();
-  }
 })
 
 function openReply(email) {
@@ -682,13 +685,18 @@ function handleDelete() {
 }
 
 function deleteEmail(emailIds) {
+  let removedCount = 0;
   emailIds.forEach(emailId => {
     emailList.forEach((item, index) => {
       if (emailId === item.emailId) {
         emailList.splice(index, 1);
+        removedCount++;
       }
     })
   })
+  if (removedCount > 0) {
+    total.value = Math.max(total.value - removedCount, 0)
+  }
   if (emailList.length < queryParam.size && !noLoading.value) {
     getEmailList()
   }
@@ -703,7 +711,7 @@ function addItem(email) {
   }
 
   email.formatText = htmlToText(email);
-  email.formatCreateTime = fromNow(email.formatCreateTime);
+  email.formatCreateTime = fromNow(email.createTime);
 
   if (props.timeSort) {
     if (noLoading.value) {
@@ -806,8 +814,12 @@ function getEmailList(refresh = false) {
     followLoading.value = !refresh;
   }
   let start = Date.now();
+  const requestMeta = {
+    includeTotal: refresh || emailList.length === 0,
+    includeLatest: refresh || emailList.length === 0
+  };
 
-  props.getEmailList(emailId, queryParam.size).then(async data => {
+  props.getEmailList(emailId, queryParam.size, requestMeta).then(async data => {
     let end = Date.now();
     let duration = end - start;
     if (duration < 300 && !emailId) {
@@ -825,7 +837,9 @@ function getEmailList(refresh = false) {
       emailList.length = 0
     }
 
-    latestEmail.value = data.latestEmail
+    if (data.latestEmail !== undefined) {
+      latestEmail.value = data.latestEmail
+    }
 
     handleList(list);
     emailList.push(...list);
@@ -834,7 +848,9 @@ function getEmailList(refresh = false) {
     noLoading.value = data.list.length < queryParam.size;
     followLoading.value = data.list.length >= queryParam.size;
 
-    total.value = data.total;
+    if (typeof data.total === 'number') {
+      total.value = data.total;
+    }
   }).finally(() => {
     loading.value = false
     reqLock = false

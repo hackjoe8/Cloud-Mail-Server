@@ -177,9 +177,31 @@
                 </div>
               </div>
               <div class="setting-item">
-                <div><span>{{ $t('resendToken') }}</span></div>
+                <div>
+                  <span>{{ $t('smtpSubmission') }}</span>
+                  <el-tooltip effect="dark" :content="$t('smtpSubmissionDesc')">
+                    <Icon class="warning" icon="fe:warning" width="18" height="18"/>
+                  </el-tooltip>
+                </div>
                 <div class="forward">
-                  <span>{{ $t('smtpServerSend') }}</span>
+                  <span>{{ smtpSubmissionSummary }}</span>
+                  <el-button class="opt-button" size="small" type="primary" @click="openSmtpSetting">
+                    <Icon icon="fluent:settings-48-regular" width="18" height="18"/>
+                  </el-button>
+                </div>
+              </div>
+              <div class="setting-item">
+                <div>
+                  <span>{{ $t('permanentToken') }}</span>
+                  <el-tooltip effect="dark" :content="$t('permanentTokenDesc')">
+                    <Icon class="warning" icon="fe:warning" width="18" height="18"/>
+                  </el-tooltip>
+                </div>
+                <div class="forward">
+                  <span>{{ setting.permanentToken || '-' }}</span>
+                  <el-button class="opt-button" size="small" type="primary" @click="openPermanentTokenSetting">
+                    <Icon icon="lsicon:edit-outline" width="16" height="16"/>
+                  </el-button>
                 </div>
               </div>
             </div>
@@ -410,7 +432,7 @@
         <form>
           <el-select style="margin-bottom: 15px" v-model="resendTokenForm.domain" placeholder="Select">
             <el-option
-                v-for="item in settingStore.domainList"
+                v-for="item in creatableDomainList"
                 :key="item"
                 :label="item"
                 :value="item"
@@ -418,6 +440,43 @@
           </el-select>
           <el-input type="text" :placeholder="$t('addResendTokenDesc')" v-model="resendTokenForm.token"/>
           <el-button type="primary" :loading="settingLoading" @click="saveResendToken">{{ $t('save') }}</el-button>
+        </form>
+      </el-dialog>
+      <el-dialog v-model="permanentTokenShow" :title="$t('editPermanentToken')" width="340" @closed="resetPermanentTokenForm">
+        <form>
+          <el-input type="text" :placeholder="$t('permanentTokenPlaceholder')" v-model="permanentTokenForm.token"/>
+          <el-button type="primary" :loading="settingLoading" @click="savePermanentToken">{{ $t('save') }}</el-button>
+        </form>
+      </el-dialog>
+      <el-dialog v-model="smtpSettingShow" :title="$t('smtpSubmission')" width="420" @closed="resetSmtpForm">
+        <form class="smtp-form">
+          <div class="smtp-switch-row">
+            <span>{{ $t('smtpRequireAuth') }}</span>
+            <el-switch v-model="smtpForm.smtpRequireAuth"/>
+          </div>
+          <el-input class="dialog-input" type="text" :placeholder="$t('smtpAuthUser')" v-model="smtpForm.smtpAuthUser"/>
+          <el-input
+              class="dialog-input"
+              type="password"
+              show-password
+              :placeholder="setting.smtpAuthPass || $t('smtpAuthPassPlaceholder')"
+              v-model="smtpForm.smtpAuthPass"
+          />
+          <div class="smtp-switch-row">
+            <span>{{ $t('smtpEnableStarttls') }}</span>
+            <el-switch v-model="smtpForm.smtpEnableStarttls"/>
+          </div>
+          <el-input class="dialog-input" type="text" :placeholder="$t('smtpTlsKeyPath')" v-model="smtpForm.smtpTlsKeyPath"/>
+          <el-input class="dialog-input" type="text" :placeholder="$t('smtpTlsCertPath')" v-model="smtpForm.smtpTlsCertPath"/>
+          <div class="smtp-switch-row">
+            <span>{{ $t('smtpSecureEnabled') }}</span>
+            <el-switch v-model="smtpForm.smtpSecureEnabled"/>
+          </div>
+          <el-input class="dialog-input" type="number" :placeholder="$t('smtpSecurePort')" v-model="smtpForm.smtpSecurePort"/>
+          <div class="smtp-tip">
+            {{ $t('smtpRestartHint') }}
+          </div>
+          <el-button type="primary" :loading="settingLoading" @click="saveSmtpSetting">{{ $t('save') }}</el-button>
         </form>
       </el-dialog>
       <el-dialog v-model="r2DomainShow" :title="$t('addOsDomain')" width="340"
@@ -742,6 +801,7 @@ import {getTextWidth} from "@/utils/text.js";
 import {fileToBase64} from "@/utils/file-utils.js"
 import {useI18n} from 'vue-i18n';
 import axios from "axios";
+import { extractCreatableDomainOptions } from "@/utils/domain.js";
 
 defineOptions({
   name: 'sys-setting'
@@ -758,6 +818,8 @@ const accountStore = useAccountStore();
 const userStore = useUserStore();
 const editTitleShow = ref(false)
 const resendTokenFormShow = ref(false)
+const permanentTokenShow = ref(false)
+const smtpSettingShow = ref(false)
 const r2DomainShow = ref(false)
 const turnstileShow = ref(false)
 const tgSettingShow = ref(false)
@@ -788,6 +850,19 @@ const regVerifyCountShow = ref(false)
 const resendTokenForm = reactive({
   domain: '',
   token: '',
+})
+const permanentTokenForm = reactive({
+  token: ''
+})
+const smtpForm = reactive({
+  smtpRequireAuth: false,
+  smtpAuthUser: '',
+  smtpAuthPass: '',
+  smtpEnableStarttls: false,
+  smtpTlsKeyPath: '',
+  smtpTlsCertPath: '',
+  smtpSecureEnabled: false,
+  smtpSecurePort: 465
 })
 const turnstileForm = reactive({
   siteKey: '',
@@ -829,6 +904,21 @@ const authRefreshOptions = computed(() => [
   {label: '20s', value: 20},
 ])
 
+const creatableDomainList = computed(() => extractCreatableDomainOptions(settingStore.domainList))
+
+const smtpSubmissionSummary = computed(() => {
+  const currentSetting = setting.value || {}
+  const authLabel = currentSetting.smtpRequireAuth
+      ? (currentSetting.smtpAuthUser || 'AUTH')
+      : t('disable')
+  const modes = []
+  if (currentSetting.smtpEnableStarttls) modes.push('STARTTLS')
+  if (Number(currentSetting.smtpSecureEnabled)) modes.push(`SMTPS:${currentSetting.smtpSecurePort || 465}`)
+  const tlsLabel = modes.length > 0 ? modes.join(' / ') : 'Plain'
+  return `${authLabel} · ${tlsLabel}`
+})
+
+
 const tgChatId = ref([])
 const customDomain = ref('')
 const tgBotStatus = ref(0)
@@ -855,7 +945,7 @@ function getSettings() {
   settingQuery().then(settingData => {
     setting.value = settingData
     settingStore.domainList = settingData.domainList;
-    resendTokenForm.domain = setting.value.domainList[0]
+    resendTokenForm.domain = creatableDomainList.value[0] || ''
     loginOpacity.value = setting.value.loginOpacity
     minEmailPrefix.value = setting.value.minEmailPrefix
     firstLoading.value = false
@@ -867,6 +957,7 @@ function getSettings() {
     resetNoticeForm()
     resetAddS3Form()
     resetEmailPrefix()
+    resetSmtpForm()
   })
 }
 
@@ -980,6 +1071,51 @@ function openNoticePopupSetting() {
 
 function openResendList() {
   showResendList.value = true
+}
+
+function openPermanentTokenSetting() {
+  permanentTokenForm.token = ''
+  permanentTokenShow.value = true
+}
+
+function resetPermanentTokenForm() {
+  permanentTokenForm.token = ''
+}
+
+function openSmtpSetting() {
+  if (settingLoading.value) return
+  resetSmtpForm()
+  smtpSettingShow.value = true
+}
+
+function resetSmtpForm() {
+  const currentSetting = setting.value || {}
+  smtpForm.smtpRequireAuth = !!Number(currentSetting.smtpRequireAuth)
+  smtpForm.smtpAuthUser = currentSetting.smtpAuthUser || ''
+  smtpForm.smtpAuthPass = ''
+  smtpForm.smtpEnableStarttls = !!Number(currentSetting.smtpEnableStarttls)
+  smtpForm.smtpTlsKeyPath = currentSetting.smtpTlsKeyPath || ''
+  smtpForm.smtpTlsCertPath = currentSetting.smtpTlsCertPath || ''
+  smtpForm.smtpSecureEnabled = !!Number(currentSetting.smtpSecureEnabled)
+  smtpForm.smtpSecurePort = Number(currentSetting.smtpSecurePort || 465)
+}
+
+function saveSmtpSetting() {
+  const settingForm = {
+    smtpRequireAuth: smtpForm.smtpRequireAuth,
+    smtpAuthUser: smtpForm.smtpAuthUser,
+    smtpEnableStarttls: smtpForm.smtpEnableStarttls,
+    smtpTlsKeyPath: smtpForm.smtpTlsKeyPath,
+    smtpTlsCertPath: smtpForm.smtpTlsCertPath,
+    smtpSecureEnabled: smtpForm.smtpSecureEnabled,
+    smtpSecurePort: smtpForm.smtpSecurePort
+  }
+
+  if (smtpForm.smtpAuthPass) {
+    settingForm.smtpAuthPass = smtpForm.smtpAuthPass
+  }
+
+  editSetting(settingForm)
 }
 
 function resetNoticeForm() {
@@ -1148,6 +1284,7 @@ function saveEmailPrefix() {
   editSetting(form, true)
 }
 
+
 const opacityChange = debounce(doOpacityChange, 1000, {
   leading: false,
   trailing: true
@@ -1247,11 +1384,17 @@ function saveResendToken() {
   editSetting(settingForm)
 }
 
+function savePermanentToken() {
+  editSetting({ permanentToken: permanentTokenForm.token.trim() })
+}
+
 function backupSetting() {
   const settingForm = {...setting.value}
   delete settingForm.resendTokens
   delete settingForm.siteKey
   delete settingForm.secretKey
+  delete settingForm.permanentToken
+  delete settingForm.smtpAuthPass
   backup = JSON.stringify(setting.value)
 }
 
@@ -1269,6 +1412,8 @@ function change(e) {
   const settingForm = {...setting.value}
   delete settingForm.siteKey
   delete settingForm.secretKey
+  delete settingForm.permanentToken
+  delete settingForm.smtpAuthPass
   delete settingForm.s3AccessKey
   delete settingForm.s3SecretKey
   delete settingForm.resendTokens
@@ -1306,6 +1451,8 @@ function editSetting(settingForm, refreshStatus = true) {
     editTitleShow.value = false
     r2DomainShow.value = false
     resendTokenFormShow.value = false
+    permanentTokenShow.value = false
+    smtpSettingShow.value = false
     turnstileShow.value = false
     tgSettingShow.value = false
     thirdEmailShow.value = false
@@ -1658,12 +1805,49 @@ function editSetting(settingForm, refreshStatus = true) {
   span {
     display: flex;
     align-items: center;
+    text-align: right;
   }
 
   .el-button {
     width: 48px;
     margin: 0 0 0 10px;
   }
+}
+
+.domain-summary {
+  max-width: 300px;
+
+  span {
+    display: inline-block;
+    max-width: 240px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.smtp-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  .el-button {
+    width: 100%;
+    margin-left: 0;
+  }
+}
+
+.smtp-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.smtp-tip {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--el-text-color-secondary);
 }
 
 .opt-button {

@@ -78,7 +78,7 @@
     <el-dialog v-model="showAdd" :title="$t('addAccount')">
       <div class="container">
         <el-input v-model="addForm.email" ref="addRef" type="text" :placeholder="$t('emailAccount')" autocomplete="off">
-          <template #append>
+          <template #append v-if="domainList.length > 0">
             <div @click.stop="openSelect">
               <el-select
                   ref="mySelect"
@@ -127,7 +127,7 @@
 </template>
 <script setup>
 import {Icon} from "@iconify/vue";
-import {nextTick, reactive, ref, watch} from "vue";
+import {computed, nextTick, reactive, ref, watch} from "vue";
 import {
   accountList,
   accountAdd,
@@ -145,6 +145,7 @@ import {useUserStore} from "@/store/user.js";
 import {hasPerm} from "@/perm/perm.js"
 import {useI18n} from "vue-i18n";
 import {AccountAllReceiveEnum} from "@/enums/account-enum.js";
+import { buildEmailAddress, extractCreatableDomainOptions } from "@/utils/domain.js";
 
 const {t} = useI18n();
 const userStore = useUserStore();
@@ -153,7 +154,7 @@ const settingStore = useSettingStore();
 const emailStore = useEmailStore();
 const showAdd = ref(false)
 const addLoading = ref(false);
-const domainList = settingStore.domainList
+const domainList = computed(() => extractCreatableDomainOptions(settingStore.domainList))
 const accounts = reactive([])
 const noLoading = ref(false)
 const loading = ref(false)
@@ -172,7 +173,7 @@ let verifyErrorCount = 0
 let first = true
 const addForm = reactive({
   email: '',
-  suffix: settingStore.domainList[0]
+  suffix: ''
 })
 let skeletonRows = 10
 const queryParams = {
@@ -191,8 +192,15 @@ watch(() => accountStore.changeUserAccountName, () => {
 
 
 const openSelect = () => {
+  if (domainList.value.length === 0) return
   mySelect.value.toggleMenu()
 }
+
+watch(domainList, (list) => {
+  if (!list.includes(addForm.suffix)) {
+    addForm.suffix = list[0] || ''
+  }
+}, { immediate: true })
 
 window.onTurnstileError = (e) => {
   if (verifyErrorCount >= 4) {
@@ -438,7 +446,9 @@ function submit() {
     return
   }
 
-  if (!isEmail(addForm.email + addForm.suffix)) {
+  const email = buildEmailAddress(addForm.email, addForm.suffix)
+
+  if (!isEmail(email)) {
     ElMessage({
       message: t('notEmailMsg'),
       type: "error",
@@ -473,7 +483,7 @@ function submit() {
   }
 
   addLoading.value = true
-  accountAdd(addForm.email + addForm.suffix, verifyToken).then(account => {
+  accountAdd(email, verifyToken).then(account => {
     addLoading.value = false
     showAdd.value = false
     addForm.email = ''

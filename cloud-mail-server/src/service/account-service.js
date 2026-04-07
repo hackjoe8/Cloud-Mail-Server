@@ -12,12 +12,13 @@ import turnstileService from './turnstile-service';
 import roleService from './role-service';
 import { t } from '../i18n/i18n';
 import verifyRecordService from './verify-record-service';
+import { domainMatchesList } from '../utils/domain-uitls.js';
 
 const accountService = {
 
 	async add(c, params, userId) {
 
-		const { addEmailVerify , addEmail, manyEmail, addVerifyCount, minEmailPrefix, emailPrefixFilter } = await settingService.query(c);
+		const { addEmailVerify , addEmail, manyEmail, addVerifyCount, minEmailPrefix, emailPrefixFilter, domainList } = await settingService.query(c);
 
 		let { email, token } = params;
 
@@ -35,7 +36,7 @@ const accountService = {
 			throw new BizError(t('notEmail'));
 		}
 
-		if (!c.env.domain.includes(emailUtils.getDomain(email))) {
+		if (!domainMatchesList(domainList, emailUtils.getDomain(email))) {
 			throw new BizError(t('notExistDomain'));
 		}
 

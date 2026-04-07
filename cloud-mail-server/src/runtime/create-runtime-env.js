@@ -1,5 +1,6 @@
 import { createPgPoolFromEnv, createPostgresD1Database } from './db/postgres-d1';
 import { createRedisClientFromEnv, createRedisKVNamespace } from './kv/redis-kv';
+import { normalizeDomainList } from '../utils/domain-uitls.js';
 
 function toBool(value, fallback = false) {
 	if (value === undefined || value === null || value === '') return fallback;
@@ -7,24 +8,10 @@ function toBool(value, fallback = false) {
 	return String(value).toLowerCase() === 'true';
 }
 
-function parseDomain(domainRaw) {
-	if (!domainRaw) return [];
-	if (Array.isArray(domainRaw)) return domainRaw;
-	const text = String(domainRaw).trim();
-	if (!text) return [];
-
-	if (text.startsWith('[')) {
-		try {
-			const parsed = JSON.parse(text);
-			if (Array.isArray(parsed)) {
-				return parsed.map((item) => String(item).trim()).filter(Boolean);
-			}
-		} catch {
-			// fallback to csv
-		}
-	}
-
-	return text.split(',').map((item) => item.trim()).filter(Boolean);
+function toOptionalBool(value) {
+	if (value === undefined || value === null || value === '') return undefined;
+	if (typeof value === 'boolean') return value;
+	return String(value).toLowerCase() === 'true';
 }
 
 export async function createRuntime() {
@@ -37,7 +24,7 @@ export async function createRuntime() {
 	const db = createPostgresD1Database(pgPool);
 	const kv = createRedisKVNamespace(redis, process.env.KV_PREFIX || 'cm:kv:');
 
-	const domain = parseDomain(process.env.DOMAIN);
+	const domain = normalizeDomainList(process.env.DOMAIN);
 
 	const env = {
 		db,
@@ -68,8 +55,13 @@ export async function createRuntime() {
 		smtpAuthPass: process.env.SMTP_AUTH_PASS || '',
 		smtpMaxSize: Number(process.env.SMTP_MAX_SIZE || 25 * 1024 * 1024),
 		smtpEnableStarttls: toBool(process.env.SMTP_ENABLE_STARTTLS, false),
+		smtpAllowInsecureAuth: toOptionalBool(process.env.SMTP_ALLOW_INSECURE_AUTH),
 		smtpTlsKeyPath: process.env.SMTP_TLS_KEY_PATH || '',
-		smtpTlsCertPath: process.env.SMTP_TLS_CERT_PATH || ''
+		smtpTlsCertPath: process.env.SMTP_TLS_CERT_PATH || '',
+		smtpTlsPfxPath: process.env.SMTP_TLS_PFX_PATH || '',
+		smtpTlsPfxPassphrase: process.env.SMTP_TLS_PFX_PASSPHRASE || '',
+		smtpSecureEnabled: toBool(process.env.SMTP_SECURE_ENABLED, false),
+		smtpSecurePort: Number(process.env.SMTP_SECURE_PORT || 465)
 	};
 
 	if (!env.jwt_secret) {
@@ -90,6 +82,10 @@ export async function createRuntime() {
 
 	if (config.smtpEnabled && config.smtpPort < 1024) {
 		console.warn(`[runtime] SMTP_PORT=${config.smtpPort} usually requires privileged permission/root.`);
+	}
+
+	if (config.smtpEnabled && config.smtpSecureEnabled && config.smtpSecurePort < 1024) {
+		console.warn(`[runtime] SMTP_SECURE_PORT=${config.smtpSecurePort} usually requires privileged permission/root.`);
 	}
 
 	return {

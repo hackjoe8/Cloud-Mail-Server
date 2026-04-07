@@ -1,4 +1,7 @@
+cloud-mail-server/.env
 deploy/.env
+mail-vue/.env.local
+mail-vue/.env.*.local
 **/node_modules
 **/dist
 **/.DS_Store

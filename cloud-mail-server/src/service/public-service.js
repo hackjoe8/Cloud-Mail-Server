@@ -14,41 +14,53 @@ import { isDel, roleConst } from '../const/entity-const';
 import email from '../entity/email';
 import userService from './user-service';
 import KvConst from '../const/kv-const';
+import settingService from './setting-service.js';
+import { domainMatchesList } from '../utils/domain-uitls.js';
+
+function toBool(value, fallback = false) {
+	if (value === undefined || value === null || value === '') return fallback;
+	if (typeof value === 'boolean') return value;
+	return String(value).toLowerCase() === 'true';
+}
+
+function clampPositiveInt(value, fallback, max) {
+	const num = Number(value);
+	if (!Number.isFinite(num) || num <= 0) return fallback;
+	return Math.min(Math.floor(num), max);
+}
 
 const publicService = {
 
 	async emailList(c, params) {
 
-		let { toEmail, content, subject, sendName, sendEmail, timeSort, num, size, type , isDel } = params
+		let { toEmail, content, subject, sendName, sendEmail, timeSort, num, size, type , isDel, includeBody } = params
 
-		const query = orm(c).select({
-				emailId: email.emailId,
-				sendEmail: email.sendEmail,
-				sendName: email.name,
-				subject: email.subject,
-				toEmail: email.toEmail,
-				toName: email.toName,
-				type: email.type,
-				createTime: email.createTime,
-				content: email.content,
-				text: email.text,
-				isDel: email.isDel,
-		}).from(email)
+		size = clampPositiveInt(size, 20, 50);
+		num = clampPositiveInt(num, 1, 1000000);
+		includeBody = toBool(includeBody, true);
 
-		if (!size) {
-			size = 20
+		const fields = {
+			emailId: email.emailId,
+			sendEmail: email.sendEmail,
+			sendName: email.name,
+			subject: email.subject,
+			toEmail: email.toEmail,
+			toName: email.toName,
+			type: email.type,
+			createTime: email.createTime,
+			isDel: email.isDel,
+		};
+
+		if (includeBody) {
+			fields.content = email.content;
+			fields.text = email.text;
 		}
 
-		if (!num) {
-			num = 1
-		}
-
-		size = Number(size);
-		num = Number(num);
+		const query = orm(c).select(fields).from(email)
 
 		num = (num - 1) * size;
 
-		let conditions = []
+		const conditions = []
 
 		if (toEmail) {
 			conditions.push(sql`LOWER(${email.toEmail}) LIKE LOWER(${toEmail})`)
@@ -79,7 +91,7 @@ const publicService = {
 		}
 
 		if (conditions.length === 1) {
-			query.where(...conditions)
+			query.where(conditions[0])
 		} else if (conditions.length > 1) {
 			query.where(and(...conditions))
 		}
@@ -96,26 +108,39 @@ const publicService = {
 
 	async addUser(c, params) {
 		const { list } = params;
+		const { domainList } = await settingService.query(c);
 
 		if (list.length === 0) return;
+
+		const normalizedList = [];
+		const seenEmails = new Set();
 
 		for (const emailRow of list) {
 			if (!verifyUtils.isEmail(emailRow.email)) {
 				throw new BizError(t('notEmail'));
 			}
 
-			if (!c.env.domain.includes(emailUtils.getDomain(emailRow.email))) {
+			if (!domainMatchesList(domainList, emailUtils.getDomain(emailRow.email))) {
 				throw new BizError(t('notEmailDomain'));
+			}
+
+			const normalizedEmail = String(emailRow.email).trim().toLowerCase();
+			if (seenEmails.has(normalizedEmail)) {
+				throw new BizError(t('emailExistDatabase'));
 			}
 
 			const { salt, hash } = await saltHashUtils.hashPassword(
 				emailRow.password || cryptoUtils.genRandomPwd()
 			);
 
-			emailRow.salt = salt;
-			emailRow.hash = hash;
+			seenEmails.add(normalizedEmail);
+			normalizedList.push({
+				...emailRow,
+				email: String(emailRow.email).trim(),
+				salt,
+				hash
+			});
 		}
-
 
 		const activeIp = reqUtils.getIp(c);
 		const { os, browser, device } = reqUtils.getUserAgent(c);
@@ -124,9 +149,9 @@ const publicService = {
 		const roleList = await roleService.roleSelectUse(c);
 		const defRole = roleList.find(roleRow => roleRow.isDefault === roleConst.isDefault.OPEN);
 
-		const userList = [];
+			const sqlList = [];
 
-		for (const emailRow of list) {
+		for (const emailRow of normalizedList) {
 			let { email, hash, salt, roleName } = emailRow;
 			let type = defRole.roleId;
 
@@ -135,21 +160,23 @@ const publicService = {
 				type = roleRow ? roleRow.roleId : type;
 			}
 
-			const userSql = `INSERT INTO user (email, password, salt, type, os, browser, active_ip, create_ip, device, active_time, create_time)
-			VALUES ('${email}', '${hash}', '${salt}', '${type}', '${os}', '${browser}', '${activeIp}', '${activeIp}', '${device}', '${activeTime}', '${activeTime}')`
-
-			const accountSql = `INSERT INTO account (email, name, user_id)
-			VALUES ('${email}', '${emailUtils.getName(email)}', 0);`;
-
-			userList.push(c.env.db.prepare(userSql));
-			userList.push(c.env.db.prepare(accountSql));
-
-		}
-
-		userList.push(c.env.db.prepare(`UPDATE account SET user_id = (SELECT user_id FROM user WHERE user.email = account.email) WHERE user_id = 0;`))
+				sqlList.push(
+					c.env.db.prepare(`
+						WITH inserted_user AS (
+							INSERT INTO "user" (
+								email, password, salt, type, os, browser, active_ip, create_ip, device, active_time, create_time
+							) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+							RETURNING user_id, email
+						)
+						INSERT INTO account (email, name, user_id)
+						SELECT email, ?, user_id
+						FROM inserted_user
+					`).bind(email, hash, salt, type, os, browser, activeIp, activeIp, device, activeTime, activeTime, emailUtils.getName(email))
+				);
+			}
 
 		try {
-			await c.env.db.batch(userList);
+			await c.env.db.batch(sqlList);
 		} catch (e) {
 			if (e.code === '23505' || e.message.includes('SQLITE_CONSTRAINT') || e.message.includes('duplicate key value')) {
 				throw new BizError(t('emailExistDatabase'))

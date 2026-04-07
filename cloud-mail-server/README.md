@@ -5,6 +5,8 @@
 - 运行时：Node + Hono
 - 存储：Postgres + Redis + S3
 - 收信：本机 SMTP（默认 `0.0.0.0:25`）
+- 提交：认证客户端可通过同一 SMTP 监听提交外发，服务器会直连目标 MX
+- 可选：额外开启 `SMTPS/465` 隐式 TLS 提交
 - 入口：`src/server.js`
 
 ## 快速启动

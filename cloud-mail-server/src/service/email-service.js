@@ -23,21 +23,85 @@ import telegramService from './telegram-service';
 import r2Service from './r2-service';
 import { sendOutboundEmailDirect } from '../runtime/smtp/send-outbound-email';
 
+function toBool(value, fallback = false) {
+	if (value === undefined || value === null || value === '') return fallback;
+	if (typeof value === 'boolean') return value;
+	return String(value).toLowerCase() === 'true';
+}
+
+function clampPositiveInt(value, fallback, max) {
+	const num = Number(value);
+	if (!Number.isFinite(num) || num <= 0) return fallback;
+	return Math.min(Math.floor(num), max);
+}
+
+function normalizeSearchText(value) {
+	if (value === undefined || value === null) return '';
+	return String(value).trim();
+}
+
+function buildAllEmailSearchConditions(params = {}) {
+	const conditions = [];
+	const type = normalizeSearchText(params.type);
+	const userEmail = normalizeSearchText(params.userEmail);
+	const accountEmail = normalizeSearchText(params.accountEmail);
+	const name = normalizeSearchText(params.name);
+	const subject = normalizeSearchText(params.subject);
+
+	if (type === 'send') {
+		conditions.push(eq(email.type, emailConst.type.SEND));
+	}
+
+	if (type === 'receive') {
+		conditions.push(eq(email.type, emailConst.type.RECEIVE));
+	}
+
+	if (type === 'delete') {
+		conditions.push(eq(email.isDel, isDel.DELETE));
+	}
+
+	if (type === 'noone') {
+		conditions.push(eq(email.status, emailConst.status.NOONE));
+	}
+
+	if (userEmail) {
+		conditions.push(sql`LOWER(${user.email}) LIKE LOWER(${'%' + userEmail + '%'})`);
+	}
+
+	if (accountEmail) {
+		conditions.push(
+			or(
+				sql`LOWER(${email.toEmail}) LIKE LOWER(${'%' + accountEmail + '%'})`,
+				sql`LOWER(${email.sendEmail}) LIKE LOWER(${'%' + accountEmail + '%'})`,
+			)
+		);
+	}
+
+	if (name) {
+		conditions.push(sql`LOWER(${email.name}) LIKE LOWER(${'%' + name + '%'})`);
+	}
+
+	if (subject) {
+		conditions.push(sql`LOWER(${email.subject}) LIKE LOWER(${'%' + subject + '%'})`);
+	}
+
+	return conditions;
+}
+
 const emailService = {
 
 	async list(c, params, userId) {
 
-		let { emailId, type, accountId, size, timeSort, allReceive } = params;
+		let { emailId, type, accountId, size, timeSort, allReceive, includeTotal, includeLatest } = params;
+		const rawEmailId = Number(emailId);
+		const shouldIncludeTotal = toBool(includeTotal, true);
+		const shouldIncludeLatest = toBool(includeLatest, true);
 
-		size = Number(size);
-		emailId = Number(emailId);
-		timeSort = Number(timeSort);
-		accountId = Number(accountId);
-		allReceive = Number(allReceive);
-
-		if (size > 50) {
-			size = 50;
-		}
+			size = clampPositiveInt(size, 50, 50);
+			emailId = Number(emailId);
+			timeSort = Number(timeSort);
+			accountId = Number(accountId);
+			allReceive = Number(allReceive);
 
 		if (!emailId) {
 
@@ -89,29 +153,33 @@ const emailService = {
 
 		const listQuery = query.limit(size).all();
 
-		const totalQuery = orm(c).select({ total: count() }).from(email)
-			.leftJoin(
-				account,
-				eq(account.accountId, email.accountId)
-			)
-			.where(
+		const totalQuery = shouldIncludeTotal
+			? orm(c).select({ total: count() }).from(email)
+				.leftJoin(
+					account,
+					eq(account.accountId, email.accountId)
+				)
+				.where(
+					and(
+						allReceive ? eq(1,1) : eq(email.accountId, accountId),
+						eq(email.userId, userId),
+						eq(email.type, type),
+						eq(email.isDel, isDel.NORMAL),
+						eq(account.isDel, isDel.NORMAL)
+					)
+				).get()
+			: Promise.resolve(null);
+
+		const latestEmailQuery = shouldIncludeLatest
+			? orm(c).select().from(email).where(
 				and(
 					allReceive ? eq(1,1) : eq(email.accountId, accountId),
 					eq(email.userId, userId),
 					eq(email.type, type),
-					eq(email.isDel, isDel.NORMAL),
-					eq(account.isDel, isDel.NORMAL)
-				)
-		).get();
-
-		const latestEmailQuery = orm(c).select().from(email).where(
-			and(
-				allReceive ? eq(1,1) : eq(email.accountId, accountId),
-				eq(email.userId, userId),
-				eq(email.type, type),
-				eq(email.isDel, isDel.NORMAL)
-			))
-			.orderBy(desc(email.emailId)).limit(1).get();
+					eq(email.isDel, isDel.NORMAL)
+				))
+				.orderBy(desc(email.emailId)).limit(1).get()
+			: Promise.resolve(null);
 
 		let [list, totalRow, latestEmail] = await Promise.all([listQuery, totalQuery, latestEmailQuery]);
 
@@ -123,7 +191,7 @@ const emailService = {
 
 		await this.emailAddAtt(c, list);
 
-		if (!latestEmail) {
+		if (shouldIncludeLatest && !latestEmail) {
 			latestEmail = {
 				emailId: 0,
 				accountId: accountId,
@@ -131,7 +199,16 @@ const emailService = {
 			}
 		}
 
-		return { list, total: totalRow.total, latestEmail };
+		return {
+			list,
+			total: shouldIncludeTotal ? (totalRow?.total ?? 0) : undefined,
+			latestEmail: shouldIncludeLatest ? latestEmail : undefined,
+			meta: {
+				includeTotal: shouldIncludeTotal,
+				includeLatest: shouldIncludeLatest,
+				initialPage: !rawEmailId
+			}
+		};
 	},
 
 	async delete(c, params, userId) {
@@ -177,8 +254,8 @@ const emailService = {
 		const roleRow = await roleService.selectById(c, userRow.type);
 
 		const isInternalRecipient = (email) => {
-			const domain = '@' + emailUtils.getDomain(email);
-			return domainList.includes(domain);
+			const domain = emailUtils.getDomain(email);
+			return domainUtils.domainMatchesList(domainList, domain);
 		};
 
 		//判断接收方是不是全部为站内邮箱
@@ -629,16 +706,15 @@ const emailService = {
 
 	async allList(c, params) {
 
-		let { emailId, size, name, subject, accountEmail, userEmail, type, timeSort } = params;
+		let { emailId, size, timeSort, includeTotal, includeLatest } = params;
+		const rawEmailId = Number(emailId);
+		const shouldIncludeTotal = toBool(includeTotal, true);
+		const shouldIncludeLatest = toBool(includeLatest, true);
 
-		size = Number(size);
+			size = clampPositiveInt(size, 50, 50);
 
-		emailId = Number(emailId);
-		timeSort = Number(timeSort);
-
-		if (size > 50) {
-			size = 50;
-		}
+			emailId = Number(emailId);
+			timeSort = Number(timeSort);
 
 		if (!emailId) {
 
@@ -650,44 +726,7 @@ const emailService = {
 
 		}
 
-		const conditions = [];
-
-		if (type === 'send') {
-			conditions.push(eq(email.type, emailConst.type.SEND));
-		}
-
-		if (type === 'receive') {
-			conditions.push(eq(email.type, emailConst.type.RECEIVE));
-		}
-
-		if (type === 'delete') {
-			conditions.push(eq(email.isDel, isDel.DELETE));
-		}
-
-		if (type === 'noone') {
-			conditions.push(eq(email.status, emailConst.status.NOONE));
-		}
-
-		if (userEmail) {
-			conditions.push(sql`LOWER(${user.email}) LIKE LOWER(${'%'+ userEmail + '%'})`);
-		}
-
-		if (accountEmail) {
-			conditions.push(
-				or(
-					sql`LOWER(${email.toEmail}) LIKE LOWER(${'%'+ accountEmail + '%'})`,
-					sql`LOWER(${email.sendEmail}) LIKE LOWER(${'%'+ accountEmail + '%'})`,
-				)
-			)
-		}
-
-		if (name) {
-			conditions.push(sql`LOWER(${email.name}) LIKE LOWER(${'%'+ name + '%'})`);
-		}
-
-		if (subject) {
-			conditions.push(sql`LOWER(${email.subject}) LIKE LOWER(${'%'+ subject + '%'})`);
-		}
+		const conditions = buildAllEmailSearchConditions(params);
 
 		conditions.push(ne(email.status, emailConst.status.SAVING));
 
@@ -715,20 +754,24 @@ const emailService = {
 			query.orderBy(desc(email.emailId));
 		}
 
-		const listQuery = await query.limit(size).all();
-		const totalQuery = await queryCount.get();
-		const latestEmailQuery = await orm(c).select().from(email)
-			.where(and(
-				eq(email.type, emailConst.type.RECEIVE),
-				ne(email.status, emailConst.status.SAVING)
-			))
-			.orderBy(desc(email.emailId)).limit(1).get();
+		const listQuery = query.limit(size).all();
+		const totalQuery = shouldIncludeTotal ? queryCount.get() : Promise.resolve(null);
+		const latestEmailQuery = shouldIncludeLatest
+			? orm(c).select({ ...email }).from(email)
+				.leftJoin(user, eq(email.userId, user.userId))
+				.where(and(
+					...buildAllEmailSearchConditions({ ...params, type: 'receive' }),
+					eq(email.type, emailConst.type.RECEIVE),
+					ne(email.status, emailConst.status.SAVING)
+				))
+				.orderBy(desc(email.emailId)).limit(1).get()
+			: Promise.resolve(null);
 
 		let [list, totalRow, latestEmail] = await Promise.all([listQuery, totalQuery, latestEmailQuery]);
 
 		await this.emailAddAtt(c, list);
 
-		if (!latestEmail) {
+		if (shouldIncludeLatest && !latestEmail) {
 			latestEmail = {
 				emailId: 0,
 				accountId: 0,
@@ -736,21 +779,29 @@ const emailService = {
 			}
 		}
 
-		return { list: list, total: totalRow.total, latestEmail };
+		return {
+			list,
+			total: shouldIncludeTotal ? (totalRow?.total ?? 0) : undefined,
+			latestEmail: shouldIncludeLatest ? latestEmail : undefined,
+			meta: {
+				includeTotal: shouldIncludeTotal,
+				includeLatest: shouldIncludeLatest,
+				initialPage: !rawEmailId
+			}
+		};
 	},
 
 	async allEmailLatest(c, params) {
 
-		const { emailId } = params;
+		const emailId = Number(params.emailId) || 0;
+		const conditions = buildAllEmailSearchConditions({ ...params, type: 'receive' });
+		conditions.push(gt(email.emailId, emailId));
+		conditions.push(eq(email.type, emailConst.type.RECEIVE));
+		conditions.push(ne(email.status, emailConst.status.SAVING));
 
 		let list = await orm(c).select({...email, userEmail: user.email}).from(email)
 			.leftJoin(user, eq(email.userId, user.userId))
-			.where(
-				and(
-					gt(email.emailId, emailId),
-					eq(email.type, emailConst.type.RECEIVE),
-					ne(email.status, emailConst.status.SAVING)
-				))
+			.where(and(...conditions))
 			.orderBy(desc(email.emailId))
 			.limit(20);
 
@@ -766,10 +817,16 @@ const emailService = {
 		if (emailIds.length > 0) {
 
 			const attList = await attService.selectByEmailIds(c, emailIds);
+			const attMap = new Map();
+
+			attList.forEach((attRow) => {
+				const rows = attMap.get(attRow.emailId) || [];
+				rows.push(attRow);
+				attMap.set(attRow.emailId, rows);
+			});
 
 			list.forEach(emailRow => {
-				const atts = attList.filter(attRow => attRow.emailId === emailRow.emailId);
-				emailRow.attList = atts;
+				emailRow.attList = attMap.get(emailRow.emailId) || [];
 			});
 		}
 	},

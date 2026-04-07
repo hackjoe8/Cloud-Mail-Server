@@ -156,7 +156,7 @@
     <el-dialog v-model="showAdd" :title="$t('addUser')">
       <div class="container">
         <el-input v-model="addForm.email" type="text" :placeholder="$t('emailAccount')" autocomplete="off">
-          <template #append>
+          <template #append v-if="domainList.length > 0">
             <div @click.stop="openSelect">
               <el-select
                   ref="mySelect"
@@ -365,7 +365,7 @@
 </template>
 
 <script setup>
-import {defineOptions, h, reactive, ref, watch} from 'vue'
+import {computed, defineOptions, h, reactive, ref, watch} from 'vue'
 import {
   userList,
   userDelete,
@@ -387,6 +387,7 @@ import {isEmail} from "@/utils/verify-utils.js";
 import {useRoleStore} from "@/store/role.js";
 import {useUserStore} from "@/store/user.js";
 import {useI18n} from 'vue-i18n';
+import { buildEmailAddress, extractCreatableDomainOptions } from "@/utils/domain.js";
 
 defineOptions({
   name: 'user'
@@ -434,11 +435,11 @@ const triggerRef = ref({
     return position.value;
   }
 })
-const domainList = settingStore.domainList
+const domainList = computed(() => extractCreatableDomainOptions(settingStore.domainList))
 
 const addForm = reactive({
   email: '',
-  suffix: settingStore.domainList[0],
+  suffix: '',
   password: '',
   type: null,
 })
@@ -677,12 +678,19 @@ const tableRowFormatter = (data) => {
 }
 
 const openSelect = () => {
+  if (domainList.value.length === 0) return
   mySelect.value.toggleMenu()
 }
 
+watch(domainList, (list) => {
+  if (!list.includes(addForm.suffix)) {
+    addForm.suffix = list[0] || ''
+  }
+}, { immediate: true })
+
 function resetAddForm() {
   addForm.email = ''
-  addForm.suffix = settingStore.domainList[0]
+  addForm.suffix = domainList.value[0] || ''
   addForm.type = null
   addForm.password = ''
 }
@@ -702,7 +710,9 @@ function submit() {
     return
   }
 
-  if (!isEmail(addForm.email + addForm.suffix)) {
+  const email = buildEmailAddress(addForm.email, addForm.suffix)
+
+  if (!isEmail(email)) {
     ElMessage({
       message: t('notEmailMsg'),
       type: "error",
@@ -740,7 +750,7 @@ function submit() {
 
   addLoading.value = true
   const form = {...addForm}
-  form.email = form.email + form.suffix
+  form.email = email
   userAdd(form).then(() => {
     addLoading.value = false
     showAdd.value = false

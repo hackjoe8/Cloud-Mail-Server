@@ -47,13 +47,14 @@ services:
 
   minio-init:
     image: minio/mc:latest
+    profiles: ["init"]
     restart: "no"
     depends_on:
       minio:
         condition: service_healthy
     entrypoint: >
       /bin/sh -c "
-      mc alias set local http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD} &&
+      until mc alias set local http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD}; do sleep 2; done &&
       mc mb --ignore-existing local/${S3_BUCKET}
       "
 
@@ -69,8 +70,6 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
-      minio-init:
-        condition: service_completed_successfully
     environment:
       TZ: ${TZ}
       PORT: 8787
@@ -85,8 +84,6 @@ services:
       CRON_EXPR: ${CRON_EXPR}
       CRON_TIMEZONE: ${CRON_TIMEZONE}
       AUTO_INIT: "false"
-      INBOUND_SHARED_SECRET: ${INBOUND_SHARED_SECRET}
-      INBOUND_MAX_SKEW_SECONDS: ${INBOUND_MAX_SKEW_SECONDS}
       LINUXDO_CLIENT_ID: ${LINUXDO_CLIENT_ID}
       LINUXDO_CLIENT_SECRET: ${LINUXDO_CLIENT_SECRET}
       LINUXDO_CALLBACK_URL: ${LINUXDO_CALLBACK_URL}
@@ -98,11 +95,19 @@ services:
       SMTP_AUTH_USER: ${SMTP_AUTH_USER}
       SMTP_AUTH_PASS: ${SMTP_AUTH_PASS}
       SMTP_ENABLE_STARTTLS: ${SMTP_ENABLE_STARTTLS}
+      SMTP_ALLOW_INSECURE_AUTH: ${SMTP_ALLOW_INSECURE_AUTH}
       SMTP_TLS_KEY_PATH: ${SMTP_TLS_KEY_PATH}
       SMTP_TLS_CERT_PATH: ${SMTP_TLS_CERT_PATH}
+      SMTP_TLS_PFX_PATH: ${SMTP_TLS_PFX_PATH}
+      SMTP_TLS_PFX_PASSPHRASE: ${SMTP_TLS_PFX_PASSPHRASE}
+      SMTP_SECURE_ENABLED: ${SMTP_SECURE_ENABLED}
+      SMTP_SECURE_PORT: ${SMTP_SECURE_PORT}
       SMTP_MAX_SIZE: ${SMTP_MAX_SIZE}
       WEB_DIST_DIR: /app/public
+    volumes:
+      - ./certs:/app/certs:ro
     ports:
+      - "${SMTP_SECURE_BIND_PORT}:465"
       - "${SMTP_BIND_PORT}:25"
       - "${API_BIND_PORT}:8787"
     healthcheck:
@@ -113,6 +118,7 @@ services:
 
   cloud-mail-init:
     image: curlimages/curl:8.12.1
+    profiles: ["init"]
     restart: "no"
     depends_on:
       cloud-mail-server:
@@ -128,6 +134,7 @@ services:
 
   cloud-mail-configure-storage:
     image: postgres:16-alpine
+    profiles: ["init"]
     restart: "no"
     depends_on:
       cloud-mail-init:
@@ -149,6 +156,7 @@ services:
 
   cloud-mail-refresh-cache:
     image: curlimages/curl:8.12.1
+    profiles: ["init"]
     restart: "no"
     depends_on:
       cloud-mail-configure-storage:

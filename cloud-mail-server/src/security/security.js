@@ -5,6 +5,8 @@ import KvConst from '../const/kv-const';
 import dayjs from 'dayjs';
 import userService from '../service/user-service';
 import permService from '../service/perm-service';
+import settingEntity from '../entity/setting';
+import orm from '../entity/orm';
 import { t } from '../i18n/i18n'
 import app from '../hono/hono';
 
@@ -87,6 +89,16 @@ const premKey = {
 	'reg-key:delete': ['/regKey/delete','/regKey/clearNotUse'],
 };
 
+async function getPermanentPublicToken(c) {
+	const cachedSetting = await c.env.kv.get(KvConst.SETTING, { type: 'json' });
+	if (cachedSetting && typeof cachedSetting.permanentToken === 'string') {
+		return cachedSetting.permanentToken;
+	}
+
+	const row = await orm(c).select({ permanentToken: settingEntity.permanentToken }).from(settingEntity).get();
+	return row?.permanentToken || '';
+}
+
 app.use('*', async (c, next) => {
 
 	const path = c.req.path;
@@ -102,8 +114,9 @@ app.use('*', async (c, next) => {
 	if (path.startsWith('/public')) {
 
 		const userPublicToken = await c.env.kv.get(KvConst.PUBLIC_KEY);
+		const permanentToken = await getPermanentPublicToken(c);
 		const publicToken = c.req.header(constant.TOKEN_HEADER);
-		if (publicToken !== userPublicToken) {
+		if (publicToken !== userPublicToken && publicToken !== permanentToken) {
 			throw new BizError(t('publicTokenFail'), 401);
 		}
 		return await next();

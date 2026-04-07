@@ -16,7 +16,7 @@
         <div v-show="show === 'login'">
           <el-input :class="settingStore.settings.loginDomain === 0 ? 'email-input' : ''" v-model="form.email"
                     type="text" :placeholder="$t('emailAccount')" autocomplete="off">
-            <template #append v-if="settingStore.settings.loginDomain === 0">
+            <template #append v-if="settingStore.settings.loginDomain === 0 && domainList.length > 0">
               <div @click.stop="openSelect">
                 <el-select
                     v-if="show === 'login'"
@@ -51,7 +51,7 @@
         <div v-show="show !== 'login'">
           <el-input class="email-input" v-model="registerForm.email" type="text" :placeholder="$t('emailAccount')"
                     autocomplete="off">
-            <template #append>
+            <template #append v-if="domainList.length > 0">
               <div @click.stop="openSelect">
                 <el-select
                     v-if="show !== 'login'"
@@ -109,7 +109,7 @@
     <el-dialog class="bind-dialog" v-model="showBindForm"  title="注册邮箱" >
       <div class="bind-container">
         <el-input v-model="bindForm.email" type="text" :placeholder="$t('emailAccount')" autocomplete="off">
-          <template #append>
+          <template #append v-if="domainList.length > 0">
             <div @click.stop="openSelect">
               <el-select
                   ref="mySelect"
@@ -148,7 +148,7 @@
 
 <script setup>
 import router from "@/router";
-import {computed, nextTick, reactive, ref} from "vue";
+import {computed, nextTick, reactive, ref, watch} from "vue";
 import {login} from "@/request/login.js";
 import {register} from "@/request/login.js";
 import {isEmail} from "@/utils/verify-utils.js";
@@ -162,6 +162,7 @@ import {loginUserInfo} from "@/request/my.js";
 import {permsToRouter} from "@/perm/perm.js";
 import {useI18n} from "vue-i18n";
 import {oauthBindUser, oauthLinuxDoLogin} from "@/request/ouath.js";
+import { buildEmailAddress, extractCreatableDomainOptions } from "@/utils/domain.js";
 
 const {t} = useI18n();
 const accountStore = useAccountStore();
@@ -193,9 +194,9 @@ const registerForm = reactive({
   confirmPassword: '',
   code: null
 })
-const domainList = settingStore.domainList;
+const domainList = computed(() => extractCreatableDomainOptions(settingStore.domainList));
 const registerLoading = ref(false)
-suffix.value = domainList[0]
+suffix.value = domainList.value[0] || ''
 const verifyShow = ref(false)
 let verifyToken = ''
 let turnstileId = null
@@ -247,8 +248,15 @@ const background = computed(() => {
 })
 
 const openSelect = () => {
+  if (domainList.value.length === 0) return
   mySelect.value.toggleMenu()
 }
+
+watch(domainList, (list) => {
+  if (!list.includes(suffix.value)) {
+    suffix.value = list[0] || ''
+  }
+}, { immediate: true })
 
 function linuxDoLogin() {
   const clientId = settingStore.settings.linuxdoClientId
@@ -314,7 +322,7 @@ function bind() {
     return
   }
 
-  let email = bindForm.email + suffix.value;
+  const email = buildEmailAddress(bindForm.email, suffix.value);
 
 
   if (!isEmail(email)) {
@@ -340,7 +348,7 @@ function bind() {
 
   }
 
-  const form = {email: bindForm.email + suffix.value, oauthUserId: bindForm.oauthUserId, code: bindForm.code}
+  const form = {email, oauthUserId: bindForm.oauthUserId, code: bindForm.code}
 
   bindLoading.value = true
   oauthBindUser(form).then(data => {
@@ -361,7 +369,9 @@ const submit = () => {
     return
   }
 
-  let email = form.email + (settingStore.settings.loginDomain === 0 ? suffix.value : '');
+  const email = settingStore.settings.loginDomain === 0
+      ? buildEmailAddress(form.email, suffix.value)
+      : String(form.email || '').trim();
 
   if (!isEmail(email)) {
     ElMessage({
@@ -428,7 +438,9 @@ function submitRegister() {
     return
   }
 
-  if (!isEmail(registerForm.email + suffix.value)) {
+  const registerEmail = buildEmailAddress(registerForm.email, suffix.value);
+
+  if (!isEmail(registerEmail)) {
     ElMessage({
       message: t('notEmailMsg'),
       type: 'error',
@@ -507,7 +519,7 @@ function submitRegister() {
   registerLoading.value = true
 
   const form = {
-    email: registerForm.email + suffix.value,
+    email: registerEmail,
     password: registerForm.password,
     token: verifyToken,
     code: registerForm.code

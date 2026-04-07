@@ -29,11 +29,11 @@ import {useSettingStore} from "@/store/setting.js";
 import emailScroll from "@/components/email-scroll/index.vue"
 import {emailList, emailDelete, emailLatest, emailRead} from "@/request/email.js";
 import {starAdd, starCancel} from "@/request/star.js";
-import {defineOptions, h, onMounted, reactive, ref, watch} from "vue";
-import {sleep} from "@/utils/time-utils.js";
+import {defineOptions, onActivated, onDeactivated, onMounted, onUnmounted, reactive, ref, watch} from "vue";
 import router from "@/router/index.js";
 import {Icon} from "@iconify/vue";
 import { useRoute } from 'vue-router'
+import { createAsyncPolling } from '@/utils/async-polling.js';
 
 defineOptions({
   name: 'email'
@@ -47,12 +47,81 @@ const scroll = ref({})
 const params = reactive({
   timeSort: 0,
 })
+function getPollingDelay() {
+  const autoRefresh = Number(settingStore.settings.autoRefresh);
+  return autoRefresh > 1 ? autoRefresh * 1000 : 3000;
+}
+
+const latestPolling = createAsyncPolling({
+  getDelay: getPollingDelay,
+  shouldRun() {
+    return route.name === 'email';
+  },
+  async onTick() {
+    const autoRefresh = Number(settingStore.settings.autoRefresh);
+    if (autoRefresh <= 1 || scroll.value.firstLoad) {
+      return;
+    }
+
+    const accountId = accountStore.currentAccountId;
+    const latestState = scroll.value.latestEmail;
+    const latestId = latestState?.emailId;
+    const allReceive = latestState?.allReceive;
+    const curTimeSort = params.timeSort;
+
+    if (latestId === undefined || accountId !== latestState?.reqAccountId) {
+      return;
+    }
+
+    const list = await emailLatest(latestId, accountId, allReceive);
+
+    if (accountId !== accountStore.currentAccountId || params.timeSort !== curTimeSort || allReceive !== accountStore.currentAccount.allReceive) {
+      return;
+    }
+
+    if (list.length === 0) {
+      return;
+    }
+
+    for (const email of list) {
+      email.reqAccountId = accountId;
+      email.allReceive = allReceive;
+
+      scroll.value.addItem(email)
+    }
+  },
+  onError(e) {
+    if (e.code === 401 || e.code === 403) {
+      settingStore.settings.autoRefresh = 0;
+    }
+    console.error(e)
+  }
+});
+
+function startLatestPolling() {
+  latestPolling.start();
+}
+
+function stopLatestPolling() {
+  latestPolling.stop();
+}
 
 onMounted(() => {
   emailStore.emailScroll = scroll;
-  latest()
+  startLatestPolling();
 })
 
+onActivated(() => {
+  startLatestPolling();
+})
+
+onDeactivated(() => {
+  stopLatestPolling();
+})
+
+onUnmounted(() => {
+  stopLatestPolling();
+})
 
 watch(() => accountStore.currentAccountId, () => {
   scroll.value.refreshList();
@@ -72,64 +141,6 @@ function jumpContent(email) {
   router.push('/message')
 }
 
-const existIds = new Set();
-
-async function latest() {
-  while (true) {
-
-    let autoRefresh = settingStore.settings.autoRefresh;
-    await sleep(autoRefresh > 1 ? autoRefresh * 1000 : 3000);
-
-    if (route.name !== 'email') {
-      continue;
-    }
-
-    const latestId = scroll.value.latestEmail?.emailId
-
-    if (!scroll.value.firstLoad && autoRefresh > 1) {
-      try {
-        const accountId = accountStore.currentAccountId
-        const allReceive = scroll.value.latestEmail?.allReceive
-        const curTimeSort = params.timeSort
-        let list = []
-
-        //确保发起请求时最后一个邮件是当前账号的,或者
-        if (accountId === scroll.value.latestEmail?.reqAccountId) {
-          list = await emailLatest(latestId, accountId, allReceive);
-        }
-
-        //确保请求回来后，账号没有切换，时间排序没有改变，全部邮件类型没变
-        if (accountId === accountStore.currentAccountId && params.timeSort === curTimeSort && allReceive === accountStore.currentAccount.allReceive) {
-          if (list.length > 0) {
-
-            for (let email of list) {
-
-              email.reqAccountId = accountId;
-              email.allReceive = allReceive;
-
-              if (!existIds.has(email.emailId)) {
-
-                existIds.add(email.emailId)
-                scroll.value.addItem(email)
-
-                await sleep(50)
-              }
-
-            }
-
-          }
-
-        }
-      } catch (e) {
-        if (e.code === 401 || e.code === 403) {
-          settingStore.settings.autoRefresh = 0;
-        }
-        console.error(e)
-      }
-    }
-  }
-}
-
 function addStar(email) {
   emailStore.starScroll?.addItem(email)
 }
@@ -138,12 +149,14 @@ function cancelStar(email) {
   emailStore.starScroll?.deleteEmail([email.emailId])
 }
 
-function getEmailList(emailId, size) {
+function getEmailList(emailId, size, requestMeta = {}) {
   const accountId =  accountStore.currentAccountId;
   const allReceive = accountStore.currentAccount.allReceive;
-  return emailList(accountId, allReceive, emailId, params.timeSort, size, 0).then(data => {
-    data.latestEmail.reqAccountId = accountId;
-    data.latestEmail.allReceive = allReceive;
+  return emailList(accountId, allReceive, emailId, params.timeSort, size, 0, requestMeta).then(data => {
+    if (data.latestEmail) {
+      data.latestEmail.reqAccountId = accountId;
+      data.latestEmail.allReceive = allReceive;
+    }
     return data;
   })
 }
