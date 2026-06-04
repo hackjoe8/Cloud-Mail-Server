@@ -450,6 +450,7 @@ body：
 
 - 管理员生成接口要求当前 JWT 用户邮箱等于环境变量 `admin`。
 - `/api/public/pickup/link` 不使用用户 JWT，要求 `Authorization` 等于公开 token 或系统设置里的 `permanentToken`。
+- 生成取件 URL 时优先匹配 `account.email`；如果不是账号邮箱，但 `email.toEmail` 已有正常收件记录，也允许生成。
 - `expiresInSeconds` 小于等于 `0` 或不传时，生成永久取件 URL。
 - 取件 URL 对应前端页面：`/pickup/:token`。
 - 取件页首次加载按 `emailId` 倒序返回，默认显示最新一封；查看其他邮件时从列表切换。

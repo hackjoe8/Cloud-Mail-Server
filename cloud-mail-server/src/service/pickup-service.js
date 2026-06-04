@@ -37,14 +37,14 @@ function getOrigin(c) {
 	return new URL(c.req.url).origin;
 }
 
-async function buildPickupLink(c, accountRow, expiresInSeconds) {
+async function buildPickupLink(c, emailAddress, expiresInSeconds) {
 	const token = await jwtUtils.generateToken(c, {
 		scope: PICKUP_SCOPE,
-		email: accountRow.email
+		email: emailAddress
 	}, expiresInSeconds);
 
 	return {
-		email: accountRow.email,
+		email: emailAddress,
 		token,
 		url: `${getOrigin(c)}/pickup/${encodeURIComponent(token)}`,
 		expiresInSeconds: expiresInSeconds || 0
@@ -52,7 +52,7 @@ async function buildPickupLink(c, accountRow, expiresInSeconds) {
 }
 
 const pickupService = {
-	async selectAccountByEmail(c, rawEmail) {
+	async selectPickupTarget(c, rawEmail) {
 		const emailAddress = normalizeEmail(rawEmail);
 
 		if (!verifyUtils.isEmail(emailAddress)) {
@@ -65,25 +65,40 @@ const pickupService = {
 			.where(sql`LOWER(${account.email}) = LOWER(${emailAddress})`)
 			.get();
 
-		if (!accountRow || accountRow.isDel === isDel.DELETE) {
-			throw new BizError('Mailbox does not exist or has been deleted', 404);
+		if (accountRow && accountRow.isDel !== isDel.DELETE) {
+			return accountRow.email;
 		}
 
-		return accountRow;
+		const emailRow = await orm(c)
+			.select({ toEmail: email.toEmail })
+			.from(email)
+			.where(and(
+				sql`LOWER(${email.toEmail}) = LOWER(${emailAddress})`,
+				eq(email.type, emailConst.type.RECEIVE),
+				eq(email.isDel, isDel.NORMAL),
+				ne(email.status, emailConst.status.SAVING)
+			))
+			.get();
+
+		if (emailRow) {
+			return emailRow.toEmail;
+		}
+
+		throw new BizError('Mailbox does not exist or has been deleted', 404);
 	},
 
 	async generateLink(c, params) {
 		assertAdmin(c);
 
-		const accountRow = await this.selectAccountByEmail(c, params.email);
+		const emailAddress = await this.selectPickupTarget(c, params.email);
 		const expiresInSeconds = parseExpiresInSeconds(params.expiresInSeconds);
-		return buildPickupLink(c, accountRow, expiresInSeconds);
+		return buildPickupLink(c, emailAddress, expiresInSeconds);
 	},
 
 	async generatePublicLink(c, params) {
-		const accountRow = await this.selectAccountByEmail(c, params.email);
+		const emailAddress = await this.selectPickupTarget(c, params.email);
 		const expiresInSeconds = parseExpiresInSeconds(params.expiresInSeconds);
-		return buildPickupLink(c, accountRow, expiresInSeconds);
+		return buildPickupLink(c, emailAddress, expiresInSeconds);
 	},
 
 	async batchGenerateLinks(c, params) {
@@ -131,7 +146,7 @@ const pickupService = {
 
 	async list(c, token, params) {
 		const payload = await this.verifyPickupToken(c, token);
-		const accountRow = await this.selectAccountByEmail(c, payload.email);
+		const emailAddress = normalizeEmail(payload.email);
 		const size = clampPositiveInt(params.size, 20, 50);
 		const cursorEmailId = Number(params.emailId) || 2147483647;
 
@@ -139,8 +154,7 @@ const pickupService = {
 			.select({ ...email })
 			.from(email)
 			.where(and(
-				eq(email.accountId, accountRow.accountId),
-				eq(email.userId, accountRow.userId),
+				sql`LOWER(${email.toEmail}) = LOWER(${emailAddress})`,
 				eq(email.type, emailConst.type.RECEIVE),
 				eq(email.isDel, isDel.NORMAL),
 				ne(email.status, emailConst.status.SAVING),
@@ -154,8 +168,7 @@ const pickupService = {
 
 		return {
 			mailbox: {
-				email: accountRow.email,
-				accountId: accountRow.accountId
+				email: emailAddress
 			},
 			list
 		};
