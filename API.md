@@ -1,6 +1,6 @@
 # Cloud Mail Server API 接口文档
 
-本文档基于当前代码提交 `d01365d` 梳理，来源包括：
+本文档基于当前代码梳理，来源包括：
 
 - `cloud-mail-server/src/api/*.js`
 - `cloud-mail-server/src/server.js`
@@ -58,6 +58,7 @@
 | --- | --- | --- |
 | `POST` | `/api/public/emailList` | 公开查询邮件 |
 | `POST` | `/api/public/addUser` | 公开批量添加用户 |
+| `POST` | `/api/public/pickup/link` | 使用公开 token 或永久 Token 生成指定邮箱取件 URL |
 
 ### 需要 JWT 的普通接口
 
@@ -363,6 +364,7 @@
 | `POST` | `/api/public/genToken` | body `{ email, password }` | 不需要 JWT，但会校验管理员邮箱和密码；返回 `{ token }` |
 | `POST` | `/api/public/emailList` | body 见下方 | 使用公开 token 查询邮件 |
 | `POST` | `/api/public/addUser` | body `{ list }` | 使用公开 token 批量添加用户 |
+| `POST` | `/api/public/pickup/link` | body `{ email, expiresInSeconds? }` | 使用公开 token 或永久 Token 生成指定邮箱取件 URL |
 
 `POST /api/public/emailList` body：
 
@@ -408,17 +410,46 @@
 - `password` 为空时自动生成随机密码。
 - `roleName` 匹配不到时使用默认角色。
 
+`POST /api/public/pickup/link` 请求头：
+
+```http
+Authorization: <public token 或 permanentToken>
+Content-Type: application/json
+```
+
+body：
+
+```json
+{
+  "email": "user@example.com",
+  "expiresInSeconds": 0
+}
+```
+
+返回 `data`：
+
+```json
+{
+  "email": "user@example.com",
+  "token": "pickup-jwt",
+  "url": "https://example.com/pickup/pickup-jwt",
+  "expiresInSeconds": 0
+}
+```
+
 ## 取件 URL
 
 | 方法 | 路径 | 参数 | 返回/说明 |
 | --- | --- | --- | --- |
 | `POST` | `/api/pickup/link` | body `{ email, expiresInSeconds? }` | 管理员 JWT 生成指定邮箱取件 URL |
 | `POST` | `/api/pickup/batchLinks` | body `{ emails, expiresInSeconds? }` | 管理员 JWT 批量生成取件 URL，返回 `邮箱----取件URL` 文本 |
+| `POST` | `/api/public/pickup/link` | body `{ email, expiresInSeconds? }` | 使用公开 token 或永久 Token 生成指定邮箱取件 URL |
 | `GET` | `/api/pickup-public/:token/list` | query `{ emailId?, size? }` | 公开取件列表，只能读取 token 绑定邮箱的正常收件 |
 
 说明：
 
 - 管理员生成接口要求当前 JWT 用户邮箱等于环境变量 `admin`。
+- `/api/public/pickup/link` 不使用用户 JWT，要求 `Authorization` 等于公开 token 或系统设置里的 `permanentToken`。
 - `expiresInSeconds` 小于等于 `0` 或不传时，生成永久取件 URL。
 - 取件 URL 对应前端页面：`/pickup/:token`。
 - 取件页首次加载按 `emailId` 倒序返回，默认显示最新一封；查看其他邮件时从列表切换。

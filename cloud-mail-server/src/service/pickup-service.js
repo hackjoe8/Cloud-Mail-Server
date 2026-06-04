@@ -37,6 +37,20 @@ function getOrigin(c) {
 	return new URL(c.req.url).origin;
 }
 
+async function buildPickupLink(c, accountRow, expiresInSeconds) {
+	const token = await jwtUtils.generateToken(c, {
+		scope: PICKUP_SCOPE,
+		email: accountRow.email
+	}, expiresInSeconds);
+
+	return {
+		email: accountRow.email,
+		token,
+		url: `${getOrigin(c)}/pickup/${encodeURIComponent(token)}`,
+		expiresInSeconds: expiresInSeconds || 0
+	};
+}
+
 const pickupService = {
 	async selectAccountByEmail(c, rawEmail) {
 		const emailAddress = normalizeEmail(rawEmail);
@@ -63,17 +77,13 @@ const pickupService = {
 
 		const accountRow = await this.selectAccountByEmail(c, params.email);
 		const expiresInSeconds = parseExpiresInSeconds(params.expiresInSeconds);
-		const token = await jwtUtils.generateToken(c, {
-			scope: PICKUP_SCOPE,
-			email: accountRow.email
-		}, expiresInSeconds);
+		return buildPickupLink(c, accountRow, expiresInSeconds);
+	},
 
-		return {
-			email: accountRow.email,
-			token,
-			url: `${getOrigin(c)}/pickup/${encodeURIComponent(token)}`,
-			expiresInSeconds: expiresInSeconds || 0
-		};
+	async generatePublicLink(c, params) {
+		const accountRow = await this.selectAccountByEmail(c, params.email);
+		const expiresInSeconds = parseExpiresInSeconds(params.expiresInSeconds);
+		return buildPickupLink(c, accountRow, expiresInSeconds);
 	},
 
 	async batchGenerateLinks(c, params) {
