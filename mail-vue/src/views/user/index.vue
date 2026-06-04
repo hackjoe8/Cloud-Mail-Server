@@ -99,6 +99,7 @@
                       </el-dropdown-item>
                       <el-dropdown-item v-else @click="restore(props.row)">{{ $t('restore') }}</el-dropdown-item>
                     </template>
+                    <el-dropdown-item @click="copyPickupUrl(props.row.email)">{{ $t('pickupUrl') }}</el-dropdown-item>
                     <el-dropdown-item @click="openAccountList(props.row.userId)" >{{ $t('account') }}</el-dropdown-item>
                     <el-dropdown-item @click="openDetails(props.row)" >{{ $t('details') }}</el-dropdown-item>
                   </el-dropdown-menu>
