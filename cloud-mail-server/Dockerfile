@@ -4,7 +4,7 @@ WORKDIR /web
 
 RUN corepack enable
 
-COPY mail-vue/package.json mail-vue/pnpm-lock.yaml ./
+COPY mail-vue/package.json mail-vue/pnpm-lock.yaml mail-vue/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 
 COPY mail-vue/ ./
@@ -16,7 +16,7 @@ WORKDIR /app
 
 RUN corepack enable
 
-COPY cloud-mail-server/package.json cloud-mail-server/pnpm-lock.yaml ./
+COPY cloud-mail-server/package.json cloud-mail-server/pnpm-lock.yaml cloud-mail-server/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 
 FROM node:22-alpine
