@@ -26,7 +26,7 @@ WORKDIR /app
 RUN corepack enable
 
 COPY --from=server-deps /app/node_modules ./node_modules
-COPY cloud-mail-server/package.json cloud-mail-server/pnpm-lock.yaml ./
+COPY cloud-mail-server/package.json cloud-mail-server/pnpm-lock.yaml cloud-mail-server/pnpm-workspace.yaml ./
 COPY cloud-mail-server/src ./src
 COPY cloud-mail-server/.env.example ./
 COPY --from=web-build /web/dist ./public
