@@ -14,8 +14,22 @@ app.post('/public/emailList', async (c) => {
 });
 
 app.post('/public/addUser', async (c) => {
-	await publicService.addUser(c, await c.req.json());
-	return c.json(result.ok());
+	const params = await c.req.json();
+	const data = await publicService.addUser(c, params);
+	const list = [];
+
+	for (const item of data.list) {
+		const pickup = await pickupService.generatePublicLink(c, {
+			email: item.email,
+			expiresInSeconds: params.expiresInSeconds
+		});
+		list.push(pickup);
+	}
+
+	return c.json(result.ok({
+		list,
+		text: list.map(item => `${item.email}----${item.url}`).join('\n')
+	}));
 });
 
 app.post('/public/pickup/link', async (c) => {

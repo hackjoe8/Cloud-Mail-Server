@@ -110,7 +110,7 @@ const publicService = {
 		const { list } = params;
 		const { domainList } = await settingService.query(c);
 
-		if (list.length === 0) return;
+		if (list.length === 0) return { list: [] };
 
 		const normalizedList = [];
 		const seenEmails = new Set();
@@ -184,6 +184,10 @@ const publicService = {
 				throw e
 			}
 		}
+
+		return {
+			list: normalizedList.map(item => ({ email: item.email }))
+		};
 
 	},
 

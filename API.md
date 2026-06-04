@@ -363,7 +363,7 @@
 | --- | --- | --- | --- |
 | `POST` | `/api/public/genToken` | body `{ email, password }` | 不需要 JWT，但会校验管理员邮箱和密码；返回 `{ token }` |
 | `POST` | `/api/public/emailList` | body 见下方 | 使用公开 token 查询邮件 |
-| `POST` | `/api/public/addUser` | body `{ list }` | 使用公开 token 批量添加用户 |
+| `POST` | `/api/public/addUser` | body `{ list, expiresInSeconds? }` | 使用公开 token 批量添加用户，并返回每个新邮箱的取件 URL |
 | `POST` | `/api/public/pickup/link` | body `{ email, expiresInSeconds? }` | 使用公开 token 或永久 Token 生成指定邮箱取件 URL |
 
 `POST /api/public/emailList` body：
@@ -395,6 +395,7 @@
 
 ```json
 {
+  "expiresInSeconds": 0,
   "list": [
     {
       "email": "user@example.com",
@@ -409,6 +410,23 @@
 
 - `password` 为空时自动生成随机密码。
 - `roleName` 匹配不到时使用默认角色。
+- `expiresInSeconds` 控制自动生成的取件 URL 有效期；小于等于 `0` 或不传时永久有效。
+
+返回 `data`：
+
+```json
+{
+  "list": [
+    {
+      "email": "user@example.com",
+      "token": "pickup-jwt",
+      "url": "https://example.com/pickup/pickup-jwt",
+      "expiresInSeconds": 0
+    }
+  ],
+  "text": "user@example.com----https://example.com/pickup/pickup-jwt"
+}
+```
 
 `POST /api/public/pickup/link` 请求头：
 
