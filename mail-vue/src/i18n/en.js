@@ -353,7 +353,18 @@ const en = {
     searchUser: 'Search by user',
     searchEmail: 'Search by Email',
     searchSender: 'Search by Sender',
-    userEmail: 'Email Address'
+    userEmail: 'Email Address',
+    pickupUrl: 'Pickup URL',
+    batchPickupUrl: 'Batch Pickup URLs',
+    pickupMailbox: 'Mailbox',
+    pickupEmailInputPlaceholder: 'Enter emails separated by line breaks, spaces, commas, or semicolons',
+    pickupExpireDays: 'Valid days (0 = never expires)',
+    neverExpire: 'Never expires',
+    generatePickupUrl: 'Generate URLs',
+    exportTxt: 'Export TXT',
+    pickupLinkCopied: 'Pickup URL copied',
+    loadMore: 'Load more',
+    download: 'Download'
 }
 
 export default en

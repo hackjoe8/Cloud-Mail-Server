@@ -353,6 +353,17 @@ const zh = {
     searchUser: '搜索用户',
     searchEmail: '搜索邮箱',
     searchSender: '搜索发件人',
-    userEmail: '用户邮箱'
+    userEmail: '用户邮箱',
+    pickupUrl: '取件URL',
+    batchPickupUrl: '批量取件URL',
+    pickupMailbox: '取件邮箱',
+    pickupEmailInputPlaceholder: '输入邮箱，支持换行、空格、逗号、分号分隔',
+    pickupExpireDays: '有效天数（0=永久）',
+    neverExpire: '永久有效',
+    generatePickupUrl: '生成取件URL',
+    exportTxt: '导出TXT',
+    pickupLinkCopied: '取件URL已复制',
+    loadMore: '加载更多',
+    download: '下载'
 }
 export default zh

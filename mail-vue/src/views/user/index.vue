@@ -23,6 +23,9 @@
       <Icon class="icon" @click="changeTimeSort" icon="material-symbols-light:timer-arrow-up-outline" v-else width="28"
             height="28"/>
       <Icon class="icon" icon="ion:reload" width="18" height="18" @click="refresh"/>
+      <el-tooltip :content="$t('batchPickupUrl')" placement="bottom">
+        <Icon class="icon" icon="fluent:link-multiple-20-regular" width="21" height="21" @click="openPickupDialog"/>
+      </el-tooltip>
       <Icon class="icon" icon="uiw:delete" width="16" height="16" @click="delUser"/>
     </div>
     <el-scrollbar ref="scrollbarRef" class="scrollbar">
@@ -206,6 +209,7 @@
               <el-button type="primary" size="small">{{t('action')}}</el-button>
               <template #dropdown>
                 <el-dropdown-menu>
+                  <el-dropdown-item @click="copyPickupUrl(props.row.email)">{{ $t('pickupUrl') }}</el-dropdown-item>
                   <el-dropdown-item @click="deleteAccount(props.row)">{{ $t('delete') }}</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
@@ -223,6 +227,43 @@
             :total="accountParams.total"
             @current-change="accountCurChange"
         />
+      </div>
+    </el-dialog>
+    <el-dialog class="pickup-dialog" v-model="pickupShow" :title="t('batchPickupUrl')">
+      <div class="pickup-dialog-body">
+        <el-input
+            v-model="pickupInput"
+            type="textarea"
+            :rows="8"
+            :placeholder="t('pickupEmailInputPlaceholder')"
+        />
+        <div class="pickup-expire">
+          <span>{{ t('pickupExpireDays') }}</span>
+          <el-input-number v-model="pickupExpireDays" :min="0" :max="3650" />
+          <span class="expire-hint">{{ pickupExpireDays ? '' : t('neverExpire') }}</span>
+        </div>
+        <div class="pickup-actions">
+          <el-button type="primary" :loading="pickupLoading" @click="generatePickupLinks">
+            {{ t('generatePickupUrl') }}
+          </el-button>
+          <el-button :disabled="!pickupOutput" @click="exportPickupTxt">{{ t('exportTxt') }}</el-button>
+        </div>
+        <el-input
+            v-if="pickupOutput"
+            v-model="pickupOutput"
+            type="textarea"
+            readonly
+            :rows="8"
+        />
+        <div class="pickup-errors" v-if="pickupErrors.length">
+          <el-alert
+              v-for="item in pickupErrors"
+              :key="item.email"
+              type="warning"
+              :closable="false"
+              :title="`${item.email}: ${item.error}`"
+          />
+        </div>
       </div>
     </el-dialog>
     <el-dialog class="account-dialog" v-model="detailsShow" :title="t('userDetails')"  >
@@ -388,6 +429,7 @@ import {useRoleStore} from "@/store/role.js";
 import {useUserStore} from "@/store/user.js";
 import {useI18n} from 'vue-i18n';
 import { buildEmailAddress, extractCreatableDomainOptions } from "@/utils/domain.js";
+import {pickupBatchLinks, pickupLink} from "@/request/pickup.js";
 
 defineOptions({
   name: 'user'
@@ -463,6 +505,12 @@ const accountShow = ref(false)
 const addLoading = ref(false);
 const setTypeShow = ref(false)
 const setPwdShow = ref(false)
+const pickupShow = ref(false)
+const pickupInput = ref('')
+const pickupOutput = ref('')
+const pickupLoading = ref(false)
+const pickupExpireDays = ref(0)
+const pickupErrors = reactive([])
 const pagerCount = ref(10)
 const settingLoading = ref(false)
 const tableLoading = ref(true)
@@ -568,6 +616,79 @@ function deleteAccount(account) {
     })
   });
 }
+
+function openPickupDialog() {
+  pickupShow.value = true
+}
+
+function parsePickupEmails() {
+  return [...new Set(
+      pickupInput.value
+          .split(/[\s,，;；]+/)
+          .map(item => item.trim())
+          .filter(Boolean)
+  )]
+}
+
+function pickupExpiresInSeconds() {
+  return Number(pickupExpireDays.value) > 0 ? Number(pickupExpireDays.value) * 24 * 60 * 60 : 0
+}
+
+async function copyPickupUrl(email) {
+  try {
+    const data = await pickupLink(email, 0)
+    await navigator.clipboard.writeText(data.url)
+    ElMessage({
+      message: t('pickupLinkCopied'),
+      type: 'success',
+      plain: true
+    })
+  } catch (e) {
+    ElMessage({
+      message: e.message || t('copyFailMsg'),
+      type: 'error',
+      plain: true
+    })
+  }
+}
+
+function generatePickupLinks() {
+  const emails = parsePickupEmails()
+  if (emails.length === 0) {
+    ElMessage({
+      message: t('emptyEmailMsg'),
+      type: 'error',
+      plain: true
+    })
+    return
+  }
+
+  pickupLoading.value = true
+  pickupErrors.length = 0
+  pickupBatchLinks(emails, pickupExpiresInSeconds()).then(data => {
+    pickupOutput.value = data.text || ''
+    pickupErrors.push(...(data.list || []).filter(item => item.error))
+    ElMessage({
+      message: t('saveSuccessMsg'),
+      type: 'success',
+      plain: true
+    })
+  }).finally(() => {
+    pickupLoading.value = false
+  })
+}
+
+function exportPickupTxt() {
+  if (!pickupOutput.value) return
+  const blob = new Blob([pickupOutput.value], {type: 'text/plain;charset=utf-8'})
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'pickup-urls.txt'
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 function accountCurChange(e) {
   accountParams.num = e
   getAccountList()
@@ -1207,6 +1328,39 @@ function adjustWidth() {
       margin-top: 15px;
     }
   }
+}
+
+.pickup-dialog-body {
+  display: grid;
+  gap: 14px;
+}
+
+.pickup-expire {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 10px;
+  align-items: center;
+  color: var(--el-text-color-regular);
+
+  @media (max-width: 440px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.expire-hint {
+  color: var(--el-text-color-secondary);
+}
+
+.pickup-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pickup-errors {
+  display: grid;
+  gap: 8px;
 }
 
 .select {

@@ -20,7 +20,8 @@ const exclude = [
 	'/public/genToken',
 	'/telegram',
 	'/test',
-	'/oauth'
+	'/oauth',
+	'/pickup-public'
 ];
 
 const requirePerms = [

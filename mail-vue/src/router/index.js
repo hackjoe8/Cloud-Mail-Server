@@ -65,6 +65,11 @@ const routes = [
         component: () => import('@/views/test/index.vue')
     },
     {
+        path: '/pickup/:token',
+        name: 'pickup',
+        component: () => import('@/views/pickup/index.vue')
+    },
+    {
         path: '/:pathMatch(.*)*',
         name: '404',
         component: () => import('@/views/404/index.vue')
@@ -98,7 +103,9 @@ router.beforeEach((to, from, next) => {
 
     const token = localStorage.getItem('token')
 
-    if (!token && to.name !== 'login') {
+    const publicRoutes = ['login', 'pickup']
+
+    if (!token && !publicRoutes.includes(to.name)) {
         return next({name: 'login'})
     }
 
