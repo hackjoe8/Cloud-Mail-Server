@@ -114,7 +114,7 @@
               :current-page="params.num"
               :page-size="params.size"
               :pager-count="pagerCount"
-              :page-sizes="[10, 15, 20, 25, 30, 50]"
+              :page-sizes="[10, 15, 20, 25, 30, 50, 100, 500]"
               background
               :layout="layout"
               :total="total"
@@ -127,7 +127,7 @@
               :current-page="params.num"
               :page-size="params.size"
               :pager-count="pagerCount"
-              :page-sizes="[10, 15, 20, 25, 30, 50]"
+              :page-sizes="[10, 15, 20, 25, 30, 50, 100, 500]"
               background
               layout="sizes, total"
               :total="total"
