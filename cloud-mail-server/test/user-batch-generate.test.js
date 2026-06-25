@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import userService, { __userServiceTestHooks } from '../src/service/user-service.js';
 import roleService from '../src/service/role-service.js';
 import settingService from '../src/service/setting-service.js';
+import { __pickupServiceTestHooks } from '../src/service/pickup-service.js';
 
 async function main() {
 	const values = new Set();
@@ -13,6 +14,18 @@ async function main() {
 	}
 
 	assert.equal(values.size, 100);
+	assert.equal(
+		__pickupServiceTestHooks.formatPickupText([
+			{ email: 'alpha@example.com', url: 'https://mail.example/pickup/abc' }
+		], 'list'),
+		'alpha@example.com----https://mail.example/pickup/abc'
+	);
+	assert.equal(
+		__pickupServiceTestHooks.formatPickupText([
+			{ email: 'alpha@example.com', url: 'https://mail.example/pickup/abc' }
+		], 'latest-body', false),
+		'https://mail.example/pickup/abc/1'
+	);
 
 	const originalSelectById = roleService.selectById;
 	const originalQuery = settingService.query;

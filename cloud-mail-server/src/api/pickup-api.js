@@ -16,3 +16,8 @@ app.get('/pickup-public/:token/list', async (c) => {
 	const data = await pickupService.list(c, c.req.param('token'), c.req.query());
 	return c.json(result.ok(data));
 });
+
+app.get('/pickup-public/:token/message/:index', async (c) => {
+	const data = await pickupService.message(c, c.req.param('token'), c.req.param('index'));
+	return c.json(result.ok(data));
+});

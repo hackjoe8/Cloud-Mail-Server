@@ -27,6 +27,27 @@ function clampPositiveInt(value, fallback, max) {
 	return Math.min(Math.floor(num), max);
 }
 
+function parseMessageIndex(value) {
+	const num = Number(value);
+	if (!Number.isFinite(num) || num <= 0) return 1;
+	return Math.floor(num);
+}
+
+function normalizeOutputMode(value) {
+	return value === 'latest-body' ? 'latest-body' : 'list';
+}
+
+export function formatPickupText(list, outputMode = 'list', includeEmail = true) {
+	const mode = normalizeOutputMode(outputMode);
+	return list
+		.filter(item => item.url)
+		.map(item => {
+			const url = mode === 'latest-body' ? `${item.url}/1` : item.url;
+			return includeEmail ? `${item.email}----${url}` : url;
+		})
+		.join('\n');
+}
+
 function assertAdmin(c) {
 	const currentUser = c.get('user');
 	if (!currentUser || currentUser.email !== c.env.admin) {
@@ -154,10 +175,7 @@ const pickupService = {
 			}
 		}
 
-		const text = list
-			.filter(item => item.url)
-			.map(item => `${item.email}----${item.url}`)
-			.join('\n');
+		const text = formatPickupText(list, params.outputMode, params.includeEmail !== false);
 
 		return { list, text };
 	},
@@ -210,7 +228,39 @@ const pickupService = {
 			},
 			list
 		};
+	},
+
+	async message(c, token, index) {
+		const payload = await this.verifyPickupToken(c, token);
+		const emailAddress = normalizeEmail(payload.email);
+		const messageIndex = parseMessageIndex(index);
+		const list = await orm(c)
+			.select({ ...email })
+			.from(email)
+			.where(and(
+				sql`LOWER(${email.toEmail}) = LOWER(${emailAddress})`,
+				eq(email.type, emailConst.type.RECEIVE),
+				eq(email.isDel, isDel.NORMAL),
+				ne(email.status, emailConst.status.SAVING)
+			))
+			.orderBy(desc(email.emailId))
+			.limit(1)
+			.offset(messageIndex - 1)
+			.all();
+
+		await emailService.emailAddAtt(c, list);
+
+		return {
+			mailbox: {
+				email: emailAddress
+			},
+			message: list[0] || null
+		};
 	}
+};
+
+export const __pickupServiceTestHooks = {
+	formatPickupText
 };
 
 export default pickupService;

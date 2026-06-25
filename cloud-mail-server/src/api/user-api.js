@@ -3,7 +3,7 @@ import userService from '../service/user-service';
 import result from '../model/result';
 import userContext from '../security/user-context';
 import accountService from '../service/account-service';
-import pickupService from '../service/pickup-service';
+import pickupService, { formatPickupText } from '../service/pickup-service';
 import BizError from '../error/biz-error';
 
 app.delete('/user/delete', async (c) => {
@@ -55,7 +55,7 @@ app.post('/user/batchCreatePickupLinks', async (c) => {
 
 	return c.json(result.ok({
 		list,
-		text: list.map(item => `${item.email}----${item.url}`).join('\n')
+		text: formatPickupText(list, params.outputMode, params.outputMode !== 'latest-body')
 	}));
 });
 

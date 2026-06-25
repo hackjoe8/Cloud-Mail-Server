@@ -246,6 +246,13 @@
           <el-input-number v-model="pickupExpireDays" :min="0" :max="3650" />
           <span class="expire-hint">{{ pickupExpireDays ? '' : t('neverExpire') }}</span>
         </div>
+        <div class="pickup-expire">
+          <span>{{ t('pickupOutputMode') }}</span>
+          <el-select v-model="pickupOutputMode">
+            <el-option :label="t('pickupOutputList')" value="list"/>
+            <el-option :label="t('pickupOutputLatestBody')" value="latest-body"/>
+          </el-select>
+        </div>
         <div class="pickup-actions">
           <el-button type="primary" :loading="pickupLoading" @click="generatePickupLinks">
             {{ t('generatePickupUrl') }}
@@ -290,6 +297,13 @@
           <span>{{ t('pickupExpireDays') }}</span>
           <el-input-number v-model="batchCreateForm.expireDays" :min="0" :max="3650" />
           <span class="expire-hint">{{ batchCreateForm.expireDays ? '' : t('neverExpire') }}</span>
+        </div>
+        <div class="pickup-expire">
+          <span>{{ t('pickupOutputMode') }}</span>
+          <el-select v-model="batchCreateForm.outputMode">
+            <el-option :label="t('pickupOutputList')" value="list"/>
+            <el-option :label="t('pickupOutputLatestBody')" value="latest-body"/>
+          </el-select>
         </div>
         <div class="pickup-actions">
           <el-button type="primary" :loading="batchCreateLoading" @click="batchCreatePickupLinks">
@@ -551,6 +565,7 @@ const pickupInput = ref('')
 const pickupOutput = ref('')
 const pickupLoading = ref(false)
 const pickupExpireDays = ref(0)
+const pickupOutputMode = ref('list')
 const pickupErrors = reactive([])
 const batchCreateShow = ref(false)
 const batchCreateLoading = ref(false)
@@ -559,7 +574,8 @@ const batchCreateForm = reactive({
   count: 100,
   suffix: '',
   type: null,
-  expireDays: 0
+  expireDays: 0,
+  outputMode: 'list'
 })
 const pagerCount = ref(10)
 const settingLoading = ref(false)
@@ -723,7 +739,7 @@ function generatePickupLinks() {
 
   pickupLoading.value = true
   pickupErrors.length = 0
-  pickupBatchLinks(emails, pickupExpiresInSeconds()).then(data => {
+  pickupBatchLinks(emails, pickupExpiresInSeconds(), pickupOutputMode.value).then(data => {
     pickupOutput.value = data.text || ''
     pickupErrors.push(...(data.list || []).filter(item => item.error))
     ElMessage({
@@ -771,7 +787,8 @@ function batchCreatePickupLinks() {
     count: batchCreateForm.count,
     suffix: batchCreateForm.suffix,
     type: batchCreateForm.type,
-    expiresInSeconds: batchCreateExpiresInSeconds()
+    expiresInSeconds: batchCreateExpiresInSeconds(),
+    outputMode: batchCreateForm.outputMode
   }).then(data => {
     batchCreateOutput.value = data.text || ''
     ElMessage({

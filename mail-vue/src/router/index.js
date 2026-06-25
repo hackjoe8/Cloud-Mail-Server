@@ -65,7 +65,7 @@ const routes = [
         component: () => import('@/views/test/index.vue')
     },
     {
-        path: '/pickup/:token',
+        path: '/pickup/:token/:messageIndex?',
         name: 'pickup',
         component: () => import('@/views/pickup/index.vue')
     },

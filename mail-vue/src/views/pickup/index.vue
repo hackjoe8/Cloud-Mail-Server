@@ -1,5 +1,17 @@
 <template>
-  <div class="pickup-page">
+  <div v-if="bodyOnlyMode" class="pickup-body-page">
+    <div class="loading" :class="pageLoading ? 'loading-show' : 'loading-hide'">
+      <loading/>
+    </div>
+    <el-scrollbar v-if="selectedEmail" class="single-body-scroll">
+      <div class="single-body-content">
+        <ShadowHtml v-if="selectedEmail.content" :html="formatImage(selectedEmail.content)" />
+        <pre v-else class="email-text">{{ selectedEmail.text || '' }}</pre>
+      </div>
+    </el-scrollbar>
+  </div>
+
+  <div v-else class="pickup-page">
     <aside class="mail-list">
       <div class="list-header">
         <div class="mailbox">
@@ -76,22 +88,23 @@
       <el-empty v-else-if="!pageLoading" :description="$t('noMessagesFound')" />
     </main>
 
-    <el-image-viewer
-        v-if="showPreview"
-        :url-list="srcList"
-        show-progress
-        @close="showPreview = false"
-    />
   </div>
+
+  <el-image-viewer
+      v-if="showPreview"
+      :url-list="srcList"
+      show-progress
+      @close="showPreview = false"
+  />
 </template>
 
 <script setup>
-import {onMounted, reactive, ref} from 'vue';
+import {computed, onMounted, reactive, ref} from 'vue';
 import {useRoute} from 'vue-router';
 import {Icon} from '@iconify/vue';
 import ShadowHtml from '@/components/shadow-html/index.vue';
 import loading from '@/components/loading/index.vue';
-import {pickupPublicList} from '@/request/pickup.js';
+import {pickupPublicList, pickupPublicMessage} from '@/request/pickup.js';
 import {formatBytes, getExtName} from '@/utils/file-utils.js';
 import {formatDetailDate, tzDayjs} from '@/utils/day.js';
 import {cvtR2Url, toOssDomain} from '@/utils/convert.js';
@@ -101,6 +114,8 @@ import {useSettingStore} from '@/store/setting.js';
 const route = useRoute();
 const settingStore = useSettingStore();
 const token = String(route.params.token || '');
+const messageIndex = computed(() => Number(route.params.messageIndex) || 0);
+const bodyOnlyMode = computed(() => messageIndex.value > 0);
 const mailbox = reactive({email: ''});
 const emails = ref([]);
 const selectedEmail = ref(null);
@@ -110,7 +125,11 @@ const showPreview = ref(false);
 const srcList = reactive([]);
 
 onMounted(() => {
-  refresh();
+  if (bodyOnlyMode.value) {
+    loadMessageBody();
+  } else {
+    refresh();
+  }
 });
 
 function setData(data, append = false) {
@@ -126,6 +145,21 @@ function refresh() {
   pageLoading.value = true;
   pickupPublicList(token, null, 20)
       .then(data => setData(data))
+      .finally(() => {
+        pageLoading.value = false;
+      });
+}
+
+function loadMessageBody() {
+  pageLoading.value = true;
+  pickupPublicMessage(token, messageIndex.value)
+      .then(data => {
+        mailbox.email = data.mailbox?.email || '';
+        selectedEmail.value = data.message || null;
+      })
+      .catch(() => {
+        selectedEmail.value = null;
+      })
       .finally(() => {
         pageLoading.value = false;
       });
@@ -194,6 +228,23 @@ function previewImage(key) {
     grid-template-columns: 1fr;
     grid-template-rows: minmax(210px, 34vh) 1fr;
   }
+}
+
+.pickup-body-page {
+  height: 100vh;
+  min-height: 0;
+  background: #fff;
+  color: #13181D;
+  position: relative;
+}
+
+.single-body-scroll {
+  height: 100vh;
+}
+
+.single-body-content {
+  min-height: 100vh;
+  padding: 0;
 }
 
 .mail-list {
