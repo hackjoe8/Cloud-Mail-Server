@@ -18,8 +18,56 @@ import { t } from '../i18n/i18n'
 import reqUtils from '../utils/req-utils';
 import {oauth} from "../entity/oauth";
 import oauthService from "./oauth-service";
-import settingService from './setting-service.js';
+import settingService, { DEFAULT_BATCH_USER_PASSWORD } from './setting-service.js';
 import { domainMatchesList } from '../utils/domain-uitls.js';
+
+const HUMAN_NAME_PARTS = [
+	'liam', 'noah', 'oliver', 'ethan', 'lucas', 'mason', 'logan', 'james',
+	'emma', 'olivia', 'ava', 'mia', 'sophia', 'ella', 'grace', 'lily',
+	'chen', 'lin', 'wang', 'lee', 'zhou', 'yang', 'hao', 'ming', 'xin', 'rui'
+];
+
+function clampBatchCount(value) {
+	const count = Number(value);
+	if (!Number.isInteger(count) || count < 1) {
+		throw new BizError(t('batchCountRange'));
+	}
+	if (count > 500) {
+		throw new BizError(t('batchCountMax'));
+	}
+	return count;
+}
+
+function randomInt(min, max) {
+	return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function randomText(length = 4) {
+	const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+	let result = '';
+	for (let i = 0; i < length; i++) {
+		result += chars.charAt(randomInt(0, chars.length - 1));
+	}
+	return result;
+}
+
+function randomBirthday() {
+	const year = randomInt(1975, 2005);
+	const month = String(randomInt(1, 12)).padStart(2, '0');
+	const maxDay = new Date(year, Number(month), 0).getDate();
+	const day = String(randomInt(1, maxDay)).padStart(2, '0');
+	return `${year}${month}${day}`;
+}
+
+function randomHumanLocalPart() {
+	const first = HUMAN_NAME_PARTS[randomInt(0, HUMAN_NAME_PARTS.length - 1)];
+	const second = HUMAN_NAME_PARTS[randomInt(0, HUMAN_NAME_PARTS.length - 1)];
+	return `${first}${second}${randomBirthday()}${randomText(4)}`;
+}
+
+export const __userServiceTestHooks = {
+	randomHumanLocalPart
+};
 
 const userService = {
 
@@ -117,8 +165,8 @@ const userService = {
 		num = Number(num);
 		timeSort = Number(timeSort);
 		params.isDel = Number(params.isDel);
-		if (size > 50) {
-			size = 50;
+		if (size > 500) {
+			size = 500;
 		}
 
 		num = (num - 1) * size;
@@ -340,6 +388,59 @@ const userService = {
 		await userService.updateUserInfo(c, userId, true);
 
 		await accountService.insert(c, { userId: userId, email, type, name: emailUtils.getName(email) });
+	},
+
+	async generateUniqueEmails(c, { count, suffix }) {
+		const domain = String(suffix || '').trim().toLowerCase().replace(/^@+/, '');
+		const batchCount = clampBatchCount(count);
+		const { domainList } = await settingService.query(c);
+
+		if (!domain || !domainMatchesList(domainList, domain)) {
+			throw new BizError(t('notEmailDomain'));
+		}
+
+		const emails = [];
+		const seen = new Set();
+		let attempts = 0;
+
+		while (emails.length < batchCount) {
+			if (attempts++ > batchCount * 30) {
+				throw new BizError(t('batchGenerateEmailFail'));
+			}
+
+			const email = `${randomHumanLocalPart()}@${domain}`;
+			const key = email.toLowerCase();
+			if (seen.has(key)) continue;
+
+			const exists = await accountService.selectByEmailIncludeDel(c, email);
+			if (exists) continue;
+
+			seen.add(key);
+			emails.push(email);
+		}
+
+		return emails;
+	},
+
+	async batchCreateGeneratedUsers(c, params) {
+		const role = await roleService.selectById(c, params.type);
+		if (!role) {
+			throw new BizError(t('roleNotExist'));
+		}
+
+		const emails = await this.generateUniqueEmails(c, params);
+		const setting = await settingService.query(c);
+		const password = params.password || setting.batchUserDefaultPassword || DEFAULT_BATCH_USER_PASSWORD;
+
+		for (const email of emails) {
+			await this.add(c, {
+				email,
+				type: params.type,
+				password
+			});
+		}
+
+		return emails.map(email => ({ email }));
 	},
 
 	async resetDaySendCount(c) {

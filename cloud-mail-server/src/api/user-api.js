@@ -3,6 +3,8 @@ import userService from '../service/user-service';
 import result from '../model/result';
 import userContext from '../security/user-context';
 import accountService from '../service/account-service';
+import pickupService from '../service/pickup-service';
+import BizError from '../error/biz-error';
 
 app.delete('/user/delete', async (c) => {
 	await userService.physicsDelete(c, c.req.query());
@@ -32,6 +34,29 @@ app.get('/user/list', async (c) => {
 app.post('/user/add', async (c) => {
 	await userService.add(c, await c.req.json());
 	return c.json(result.ok());
+});
+
+app.post('/user/batchCreatePickupLinks', async (c) => {
+	if (c.get('user')?.email !== c.env.admin) {
+		throw new BizError('Only admin can batch create pickup URLs', 403);
+	}
+
+	const params = await c.req.json();
+	const createdList = await userService.batchCreateGeneratedUsers(c, params);
+	const list = [];
+
+	for (const item of createdList) {
+		const pickup = await pickupService.generateLink(c, {
+			email: item.email,
+			expiresInSeconds: params.expiresInSeconds
+		});
+		list.push(pickup);
+	}
+
+	return c.json(result.ok({
+		list,
+		text: list.map(item => `${item.email}----${item.url}`).join('\n')
+	}));
 });
 
 app.put('/user/resetSendCount', async (c) => {

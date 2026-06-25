@@ -23,6 +23,9 @@
       <Icon class="icon" @click="changeTimeSort" icon="material-symbols-light:timer-arrow-up-outline" v-else width="28"
             height="28"/>
       <Icon class="icon" icon="ion:reload" width="18" height="18" @click="refresh"/>
+      <el-tooltip :content="$t('batchCreatePickupUrl')" placement="bottom">
+        <Icon class="icon" icon="fluent:person-mail-20-regular" width="21" height="21" @click="openBatchCreateDialog"/>
+      </el-tooltip>
       <el-tooltip :content="$t('batchPickupUrl')" placement="bottom">
         <Icon class="icon" icon="fluent:link-multiple-20-regular" width="21" height="21" @click="openPickupDialog"/>
       </el-tooltip>
@@ -267,6 +270,42 @@
         </div>
       </div>
     </el-dialog>
+    <el-dialog class="pickup-dialog" v-model="batchCreateShow" :title="t('batchCreatePickupUrl')">
+      <div class="pickup-dialog-body">
+        <div class="batch-create-grid">
+          <el-input-number v-model="batchCreateForm.count" :min="1" :max="500" />
+          <el-select v-model="batchCreateForm.suffix" :placeholder="t('select')">
+            <el-option
+                v-for="item in domainList"
+                :key="item"
+                :label="item"
+                :value="item"
+            />
+          </el-select>
+          <el-select v-model="batchCreateForm.type" :placeholder="t('perm')">
+            <el-option v-for="item in roleList" :label="item.name" :value="item.roleId" :key="item.roleId"/>
+          </el-select>
+        </div>
+        <div class="pickup-expire">
+          <span>{{ t('pickupExpireDays') }}</span>
+          <el-input-number v-model="batchCreateForm.expireDays" :min="0" :max="3650" />
+          <span class="expire-hint">{{ batchCreateForm.expireDays ? '' : t('neverExpire') }}</span>
+        </div>
+        <div class="pickup-actions">
+          <el-button type="primary" :loading="batchCreateLoading" @click="batchCreatePickupLinks">
+            {{ t('batchCreatePickupUrl') }}
+          </el-button>
+          <el-button :disabled="!batchCreateOutput" @click="exportBatchCreateTxt">{{ t('exportTxt') }}</el-button>
+        </div>
+        <el-input
+            v-if="batchCreateOutput"
+            v-model="batchCreateOutput"
+            type="textarea"
+            readonly
+            :rows="8"
+        />
+      </div>
+    </el-dialog>
     <el-dialog class="account-dialog" v-model="detailsShow" :title="t('userDetails')"  >
       <div class="details">
         <div v-if="userDetails.username"><span class="details-item-title">LinuxDo:</span>
@@ -415,6 +454,7 @@ import {
   userSetStatus,
   userSetType,
   userAdd,
+  userBatchCreatePickupLinks,
   userRestSendCount,
   userRestore,
   userDeleteAccount,
@@ -512,6 +552,15 @@ const pickupOutput = ref('')
 const pickupLoading = ref(false)
 const pickupExpireDays = ref(0)
 const pickupErrors = reactive([])
+const batchCreateShow = ref(false)
+const batchCreateLoading = ref(false)
+const batchCreateOutput = ref('')
+const batchCreateForm = reactive({
+  count: 100,
+  suffix: '',
+  type: null,
+  expireDays: 0
+})
 const pagerCount = ref(10)
 const settingLoading = ref(false)
 const tableLoading = ref(true)
@@ -622,6 +671,10 @@ function openPickupDialog() {
   pickupShow.value = true
 }
 
+function openBatchCreateDialog() {
+  batchCreateShow.value = true
+}
+
 function parsePickupEmails() {
   return [...new Set(
       pickupInput.value
@@ -633,6 +686,10 @@ function parsePickupEmails() {
 
 function pickupExpiresInSeconds() {
   return Number(pickupExpireDays.value) > 0 ? Number(pickupExpireDays.value) * 24 * 60 * 60 : 0
+}
+
+function batchCreateExpiresInSeconds() {
+  return Number(batchCreateForm.expireDays) > 0 ? Number(batchCreateForm.expireDays) * 24 * 60 * 60 : 0
 }
 
 async function copyPickupUrl(email) {
@@ -686,6 +743,55 @@ function exportPickupTxt() {
   const a = document.createElement('a')
   a.href = url
   a.download = 'pickup-urls.txt'
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function batchCreatePickupLinks() {
+  if (!batchCreateForm.suffix) {
+    ElMessage({
+      message: t('domainListEmptyMsg'),
+      type: 'error',
+      plain: true
+    })
+    return
+  }
+
+  if (!batchCreateForm.type) {
+    ElMessage({
+      message: t('emptyRole'),
+      type: 'error',
+      plain: true
+    })
+    return
+  }
+
+  batchCreateLoading.value = true
+  userBatchCreatePickupLinks({
+    count: batchCreateForm.count,
+    suffix: batchCreateForm.suffix,
+    type: batchCreateForm.type,
+    expiresInSeconds: batchCreateExpiresInSeconds()
+  }).then(data => {
+    batchCreateOutput.value = data.text || ''
+    ElMessage({
+      message: t('saveSuccessMsg'),
+      type: 'success',
+      plain: true
+    })
+    getUserList(false)
+  }).finally(() => {
+    batchCreateLoading.value = false
+  })
+}
+
+function exportBatchCreateTxt() {
+  if (!batchCreateOutput.value) return
+  const blob = new Blob([batchCreateOutput.value], {type: 'text/plain;charset=utf-8'})
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'created-pickup-urls.txt'
   a.click()
   URL.revokeObjectURL(url)
 }
@@ -807,6 +913,9 @@ const openSelect = () => {
 watch(domainList, (list) => {
   if (!list.includes(addForm.suffix)) {
     addForm.suffix = list[0] || ''
+  }
+  if (!list.includes(batchCreateForm.suffix)) {
+    batchCreateForm.suffix = list[0] || ''
   }
 }, { immediate: true })
 
@@ -1334,6 +1443,16 @@ function adjustWidth() {
 .pickup-dialog-body {
   display: grid;
   gap: 14px;
+}
+
+.batch-create-grid {
+  display: grid;
+  grid-template-columns: 120px 1fr 1fr;
+  gap: 10px;
+
+  @media (max-width: 540px) {
+    grid-template-columns: 1fr;
+  }
 }
 
 .pickup-expire {

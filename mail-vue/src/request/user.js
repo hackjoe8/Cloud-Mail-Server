@@ -26,6 +26,10 @@ export function userAdd(form) {
     return http.post('/user/add', form)
 }
 
+export function userBatchCreatePickupLinks(form) {
+    return http.post('/user/batchCreatePickupLinks', form)
+}
+
 export function userRestSendCount(userId) {
     return http.put('/user/resetSendCount', {userId})
 }

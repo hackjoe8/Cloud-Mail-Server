@@ -8,7 +8,7 @@ import {
 	classifyEnvelopeRecipients,
 	resolveSmtpRuntimeConfig
 } from '../src/runtime/smtp/start-smtp-server.js';
-import settingService, { normalizeSmtpSettingParams } from '../src/service/setting-service.js';
+import settingService, { normalizeBatchUserPasswordParams, normalizeSmtpSettingParams } from '../src/service/setting-service.js';
 
 function createRuntime(overrides = {}) {
 	return {
@@ -133,6 +133,19 @@ async function main() {
 	assert.equal(normalizedParams.smtpSecurePort, 2465);
 	assert.ok(!Object.hasOwn(normalizedParams, 'smtpAuthPass'));
 	assert.equal(settingService.maskSecret('abcd', 4), '******');
+
+	const normalizedBatchPassword = normalizeBatchUserPasswordParams(
+		{ batchUserDefaultPassword: '  new-pass-123  ' },
+		{ batchUserDefaultPassword: 'current-pass' }
+	);
+	assert.equal(normalizedBatchPassword.batchUserDefaultPassword, 'new-pass-123');
+	assert.ok(!Object.hasOwn(
+		normalizeBatchUserPasswordParams(
+			{ batchUserDefaultPassword: settingService.maskSecret('current-pass', 4) },
+			{ batchUserDefaultPassword: 'current-pass' }
+		),
+		'batchUserDefaultPassword'
+	));
 
 	const inboundCalls = [];
 	const relayCalls = [];

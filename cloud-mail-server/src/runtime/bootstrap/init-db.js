@@ -171,6 +171,7 @@ const CREATE_TABLE_SQL = [
 		domain_list TEXT NOT NULL DEFAULT '',
 		resend_tokens TEXT NOT NULL DEFAULT '{}',
 		permanent_token TEXT NOT NULL DEFAULT '',
+		batch_user_default_password TEXT NOT NULL DEFAULT 'qq5718423',
 		smtp_require_auth INTEGER NOT NULL DEFAULT 0,
 		smtp_auth_user TEXT NOT NULL DEFAULT '',
 		smtp_auth_pass TEXT NOT NULL DEFAULT '',
@@ -298,6 +299,7 @@ async function ensureSeedData(env) {
 async function ensureExistingColumns(env) {
 	const patchSqlList = [
 		`ALTER TABLE setting ADD COLUMN IF NOT EXISTS permanent_token TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE setting ADD COLUMN IF NOT EXISTS batch_user_default_password TEXT NOT NULL DEFAULT 'qq5718423'`,
 		`ALTER TABLE setting ADD COLUMN IF NOT EXISTS smtp_require_auth INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE setting ADD COLUMN IF NOT EXISTS smtp_auth_user TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE setting ADD COLUMN IF NOT EXISTS smtp_auth_pass TEXT NOT NULL DEFAULT ''`,

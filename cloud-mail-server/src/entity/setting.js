@@ -27,6 +27,7 @@ export const setting = sqliteTable('setting', {
 	domainListRaw: text('domain_list').default('').notNull(),
 	resendTokens: text('resend_tokens').default("{}").notNull(),
 	permanentToken: text('permanent_token').default('').notNull(),
+	batchUserDefaultPassword: text('batch_user_default_password').default('qq5718423').notNull(),
 	smtpRequireAuth: integer('smtp_require_auth').default(0).notNull(),
 	smtpAuthUser: text('smtp_auth_user').default('').notNull(),
 	smtpAuthPass: text('smtp_auth_pass').default('').notNull(),

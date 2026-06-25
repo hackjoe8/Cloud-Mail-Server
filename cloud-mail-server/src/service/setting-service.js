@@ -10,6 +10,8 @@ import {t} from '../i18n/i18n'
 import verifyRecordService from './verify-record-service';
 import { formatDomainList, isValidDomainName, normalizeDomainList, resolveActiveDomainList } from '../utils/domain-uitls.js';
 
+export const DEFAULT_BATCH_USER_PASSWORD = 'qq5718423';
+
 export function normalizeSmtpSettingParams(params, currentSetting = {}) {
 	const nextParams = { ...params };
 
@@ -57,12 +59,32 @@ export function normalizeSmtpSettingParams(params, currentSetting = {}) {
 	return nextParams;
 }
 
+export function maskSecret(value, visible = 12) {
+	if (!value) return null;
+	const revealCount = Math.max(0, Math.min(visible, value.length - 6));
+	if (revealCount <= 0) return '******';
+	return `${value.slice(0, revealCount)}******`;
+}
+
+export function normalizeBatchUserPasswordParams(params, currentSetting = {}) {
+	const nextParams = { ...params };
+	if (typeof nextParams.batchUserDefaultPassword === 'string') {
+		const password = nextParams.batchUserDefaultPassword.trim();
+		const maskedPassword = maskSecret(currentSetting.batchUserDefaultPassword, 4);
+		if (!password || password === currentSetting.batchUserDefaultPassword || password === maskedPassword) {
+			delete nextParams.batchUserDefaultPassword;
+		} else if (password.length < 6) {
+			throw new BizError(t('pwdMinLength'));
+		} else {
+			nextParams.batchUserDefaultPassword = password;
+		}
+	}
+	return nextParams;
+}
+
 const settingService = {
 	maskSecret(value, visible = 12) {
-		if (!value) return null;
-		const revealCount = Math.max(0, Math.min(visible, value.length - 6));
-		if (revealCount <= 0) return '******';
-		return `${value.slice(0, revealCount)}******`;
+		return maskSecret(value, visible);
 	},
 
 	applyDomainSettings(settingRow, envDomain = []) {
@@ -149,6 +171,7 @@ const settingService = {
 
 		settingRow.secretKey = settingRow.secretKey ? `${settingRow.secretKey.slice(0, 6)}******` : null;
 		settingRow.permanentToken = this.maskSecret(settingRow.permanentToken);
+		settingRow.batchUserDefaultPassword = this.maskSecret(settingRow.batchUserDefaultPassword, 4);
 		settingRow.smtpAuthPass = this.maskSecret(settingRow.smtpAuthPass, 4);
 
 		Object.keys(settingRow.resendTokens).forEach(key => {
@@ -208,6 +231,7 @@ const settingService = {
 		}
 
 		params = normalizeSmtpSettingParams(params, settingData);
+		params = normalizeBatchUserPasswordParams(params, settingData);
 
 		params.resendTokens = JSON.stringify(resendTokens);
 		await orm(c).update(settingEntity).set({ ...params }).returning().get();

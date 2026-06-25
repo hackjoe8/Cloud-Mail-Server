@@ -204,6 +204,20 @@
                   </el-button>
                 </div>
               </div>
+              <div class="setting-item">
+                <div>
+                  <span>{{ $t('batchUserDefaultPassword') }}</span>
+                  <el-tooltip effect="dark" :content="$t('batchUserDefaultPasswordDesc')">
+                    <Icon class="warning" icon="fe:warning" width="18" height="18"/>
+                  </el-tooltip>
+                </div>
+                <div class="forward">
+                  <span>{{ setting.batchUserDefaultPassword || '-' }}</span>
+                  <el-button class="opt-button" size="small" type="primary" @click="openBatchUserPasswordSetting">
+                    <Icon icon="lsicon:edit-outline" width="16" height="16"/>
+                  </el-button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -446,6 +460,12 @@
         <form>
           <el-input type="text" :placeholder="$t('permanentTokenPlaceholder')" v-model="permanentTokenForm.token"/>
           <el-button type="primary" :loading="settingLoading" @click="savePermanentToken">{{ $t('save') }}</el-button>
+        </form>
+      </el-dialog>
+      <el-dialog v-model="batchUserPasswordShow" :title="$t('batchUserDefaultPassword')" width="340" @closed="resetBatchUserPasswordForm">
+        <form>
+          <el-input type="password" show-password :placeholder="setting.batchUserDefaultPassword || $t('batchUserDefaultPasswordPlaceholder')" v-model="batchUserPasswordForm.password"/>
+          <el-button type="primary" :loading="settingLoading" @click="saveBatchUserPassword">{{ $t('save') }}</el-button>
         </form>
       </el-dialog>
       <el-dialog v-model="smtpSettingShow" :title="$t('smtpSubmission')" width="420" @closed="resetSmtpForm">
@@ -819,6 +839,7 @@ const userStore = useUserStore();
 const editTitleShow = ref(false)
 const resendTokenFormShow = ref(false)
 const permanentTokenShow = ref(false)
+const batchUserPasswordShow = ref(false)
 const smtpSettingShow = ref(false)
 const r2DomainShow = ref(false)
 const turnstileShow = ref(false)
@@ -853,6 +874,9 @@ const resendTokenForm = reactive({
 })
 const permanentTokenForm = reactive({
   token: ''
+})
+const batchUserPasswordForm = reactive({
+  password: ''
 })
 const smtpForm = reactive({
   smtpRequireAuth: false,
@@ -1080,6 +1104,19 @@ function openPermanentTokenSetting() {
 
 function resetPermanentTokenForm() {
   permanentTokenForm.token = ''
+}
+
+function openBatchUserPasswordSetting() {
+  batchUserPasswordForm.password = ''
+  batchUserPasswordShow.value = true
+}
+
+function resetBatchUserPasswordForm() {
+  batchUserPasswordForm.password = ''
+}
+
+function saveBatchUserPassword() {
+  editSetting({batchUserDefaultPassword: batchUserPasswordForm.password})
 }
 
 function openSmtpSetting() {
@@ -1394,6 +1431,7 @@ function backupSetting() {
   delete settingForm.siteKey
   delete settingForm.secretKey
   delete settingForm.permanentToken
+  delete settingForm.batchUserDefaultPassword
   delete settingForm.smtpAuthPass
   backup = JSON.stringify(setting.value)
 }
@@ -1413,6 +1451,7 @@ function change(e) {
   delete settingForm.siteKey
   delete settingForm.secretKey
   delete settingForm.permanentToken
+  delete settingForm.batchUserDefaultPassword
   delete settingForm.smtpAuthPass
   delete settingForm.s3AccessKey
   delete settingForm.s3SecretKey
@@ -1452,6 +1491,7 @@ function editSetting(settingForm, refreshStatus = true) {
     r2DomainShow.value = false
     resendTokenFormShow.value = false
     permanentTokenShow.value = false
+    batchUserPasswordShow.value = false
     smtpSettingShow.value = false
     turnstileShow.value = false
     tgSettingShow.value = false

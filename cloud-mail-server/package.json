@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/server.js",
     "start": "tsx src/server.js",
-    "test": "tsx test/domain-list-setting.test.js && tsx test/smtp-server.test.js && tsx test/outbound-mime-normalize.test.js"
+    "test": "tsx test/domain-list-setting.test.js && tsx test/smtp-server.test.js && tsx test/outbound-mime-normalize.test.js && tsx test/user-batch-generate.test.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.882.0",

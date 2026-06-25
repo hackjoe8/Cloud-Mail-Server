@@ -64,6 +64,9 @@ const en = {
 	publicTokenFail: 'Token validation failed',
 	notAdmin: 'The entered email is not an administrator email',
 	emailExistDatabase: 'Email already exists in the database',
+	batchCountRange: 'Batch count must be an integer from 1 to 500',
+	batchCountMax: 'You can generate at most 500 emails at once',
+	batchGenerateEmailFail: 'Failed to generate unique emails, please retry',
 	notConfigOss: 'Object storage not configured',
 	perms: {
 		"邮件": "Emails",

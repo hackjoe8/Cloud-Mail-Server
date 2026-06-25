@@ -64,6 +64,9 @@ const zh = {
 	publicTokenFail: 'token验证失败',
 	notAdmin: '输入的邮箱不是管理员邮箱',
 	emailExistDatabase: '有邮箱已存在数据库中',
+	batchCountRange: '生成数量必须是 1 到 500 之间的整数',
+	batchCountMax: '一次最多生成 500 个邮箱',
+	batchGenerateEmailFail: '生成邮箱失败，请重试',
 	notConfigOss: '对象存储未配置',
 	perms: {
 		"邮件": "邮件",
