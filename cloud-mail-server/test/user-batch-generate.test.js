@@ -23,8 +23,8 @@ async function main() {
 	assert.equal(
 		__pickupServiceTestHooks.formatPickupText([
 			{ email: 'alpha@example.com', url: 'https://mail.example/pickup/abc' }
-		], 'latest-body', false),
-		'https://mail.example/pickup/abc/1'
+		], 'latest-body'),
+		'alpha@example.com----https://mail.example/pickup/abc/1'
 	);
 
 	const originalSelectById = roleService.selectById;

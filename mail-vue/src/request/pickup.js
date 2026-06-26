@@ -8,8 +8,7 @@ export function pickupBatchLinks(emails, expiresInSeconds = 0, outputMode = 'lis
     return http.post('/pickup/batchLinks', {
         emails,
         expiresInSeconds,
-        outputMode,
-        includeEmail: outputMode !== 'latest-body'
+        outputMode
     });
 }
 

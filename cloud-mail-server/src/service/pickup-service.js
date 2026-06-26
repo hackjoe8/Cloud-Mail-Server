@@ -37,13 +37,13 @@ function normalizeOutputMode(value) {
 	return value === 'latest-body' ? 'latest-body' : 'list';
 }
 
-export function formatPickupText(list, outputMode = 'list', includeEmail = true) {
+export function formatPickupText(list, outputMode = 'list') {
 	const mode = normalizeOutputMode(outputMode);
 	return list
 		.filter(item => item.url)
 		.map(item => {
 			const url = mode === 'latest-body' ? `${item.url}/1` : item.url;
-			return includeEmail ? `${item.email}----${url}` : url;
+			return `${item.email}----${url}`;
 		})
 		.join('\n');
 }
@@ -175,7 +175,7 @@ const pickupService = {
 			}
 		}
 
-		const text = formatPickupText(list, params.outputMode, params.includeEmail !== false);
+		const text = formatPickupText(list, params.outputMode);
 
 		return { list, text };
 	},

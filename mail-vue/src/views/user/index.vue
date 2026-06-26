@@ -300,7 +300,7 @@
         </div>
         <div class="pickup-expire">
           <span>{{ t('pickupOutputMode') }}</span>
-          <el-select v-model="batchCreateForm.outputMode">
+          <el-select v-model="batchCreateForm.outputMode" class="pickup-output-select">
             <el-option :label="t('pickupOutputList')" value="list"/>
             <el-option :label="t('pickupOutputLatestBody')" value="latest-body"/>
           </el-select>
@@ -1486,6 +1486,10 @@ function adjustWidth() {
 
 .expire-hint {
   color: var(--el-text-color-secondary);
+}
+
+.pickup-output-select {
+  min-width: 180px;
 }
 
 .pickup-actions {

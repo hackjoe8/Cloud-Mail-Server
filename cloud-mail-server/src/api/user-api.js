@@ -55,7 +55,7 @@ app.post('/user/batchCreatePickupLinks', async (c) => {
 
 	return c.json(result.ok({
 		list,
-		text: formatPickupText(list, params.outputMode, params.outputMode !== 'latest-body')
+		text: formatPickupText(list, params.outputMode)
 	}));
 });
 
